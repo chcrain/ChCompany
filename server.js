@@ -3,16 +3,20 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
-const { body } = require('express-validator');
-const morgan = require('morgan'); // ✅ Logging
+const { S3 } = require('aws-sdk'); // ✅ Import AWS SDK
 const fs = require('fs');
 const path = require('path');
-const { S3 } = require('aws-sdk'); // ✅ AWS SDK for Cloudflare R2
-
-const authenticateToken = require('./middleware/authenticateToken');
-const uploadController = require('./controllers/uploadController');
+const morgan = require('morgan'); // ✅ Import Morgan for logging
 
 const app = express();
+
+// ✅ Log Cloudflare Credentials (Debugging `.env` issues)
+console.log('Cloudflare Credentials:', {
+  CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || 'MISSING',
+  CLOUDFLARE_BUCKET_NAME: process.env.CLOUDFLARE_BUCKET_NAME || 'MISSING',
+  CLOUDFLARE_ACCESS_KEY_ID: process.env.CLOUDFLARE_ACCESS_KEY_ID || 'MISSING',
+  CLOUDFLARE_SECRET_ACCESS_KEY: process.env.CLOUDFLARE_SECRET_ACCESS_KEY ? 'LOADED' : 'MISSING', // Avoid printing secret keys
+});
 
 // ✅ Middleware
 app.use(helmet());
@@ -20,7 +24,10 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev')); // ✅ Logs all incoming requests in 'dev' mode
 
-// ✅ Cloudflare R2 Configuration
+// ✅ Configure Multer (File Upload)
+const upload = multer({ dest: 'uploads/' });
+
+// ✅ Cloudflare R2 Configuration (AWS SDK)
 const s3 = new S3({
   endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`, 
   accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
@@ -28,26 +35,12 @@ const s3 = new S3({
   signatureVersion: 'v4',
 });
 
-// ✅ Root Route (Avoid "Cannot GET /")
+// ✅ Root Route (For Testing)
 app.get('/', (req, res) => {
   res.status(200).send('🚀 Server is running!');
 });
 
-// ✅ Multer Config (for handling file uploads)
-const upload = multer({
-  dest: 'uploads/',
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB file limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only JPEG, PNG, and GIF are allowed.'));
-    }
-  }
-});
-
-// ✅ Upload Route (Uploads file to Cloudflare R2)
+// ✅ Upload Route (Handles Image Uploads)
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -57,7 +50,7 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     console.log('Received Request Body:', req.body);
     console.log('Received File:', req.file);
 
-    // Read file from local uploads folder
+    // ✅ Read the file from local storage
     const filePath = req.file.path;
     const fileStream = fs.createReadStream(filePath);
     const fileExtension = path.extname(req.file.originalname);
@@ -87,7 +80,7 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ Global Error Handler (Catches all unexpected errors)
+// ✅ Global Error Handler (Catches All Unexpected Errors)
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err.message);
   res.status(500).json({ result: 'error', message: 'Internal server error' });
@@ -95,6 +88,8 @@ app.use((err, req, res, next) => {
 
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
+
+// ✅ Prevent "Address Already in Use" Error
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
