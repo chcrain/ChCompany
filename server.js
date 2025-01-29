@@ -1,28 +1,31 @@
-// server.js
-
+require('dotenv').config();
 const express = require('express');
-const multer = require('multer');
-const axios = require('axios');
-const dotenv = require('dotenv');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
-const { body, validationResult } = require('express-validator');
-const winston = require('winston');
+const multer = require('multer');
+const { body } = require('express-validator');
+const morgan = require('morgan'); // ✅ Ensure Morgan is imported
 
-// Configure Environment Variables
-dotenv.config();
+const authenticateToken = require('./middleware/authenticateToken');
+const uploadController = require('./controllers/uploadController');
 
-// Initialize Express App
 const app = express();
 
-// Configure Multer for File Uploads
-const upload = multer({ 
-  dest: 'uploads/', // Temporary storage for uploaded files
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB file size limit
+// ✅ Middleware
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev')); // ✅ Logs all incoming requests in 'dev' mode
+
+// ✅ Root Route (Avoid "Cannot GET /")
+app.get('/', (req, res) => {
+  res.status(200).send('🚀 Server is running!');
+});
+
+// ✅ Multer Config (for handling file uploads)
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB file limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
     if (allowedTypes.includes(file.mimetype)) {
@@ -33,89 +36,27 @@ const upload = multer({
   }
 });
 
-// Destructure Environment Variables
-const {
-  PORT,
-  CLOUDFLARE_ACCOUNT_ID,
-  CLOUDFLARE_BUCKET_NAME,
-  CLOUDFLARE_ACCESS_KEY_ID,
-  CLOUDFLARE_SECRET_ACCESS_KEY,
-  GOOGLE_SHEET_URL,
-  API_KEY,
-} = process.env;
-
-// CORS Configuration - Allow All Origins for Mobile Apps
-app.use(cors({
-  origin: '*', // Allow all origins since CORS is not a concern for mobile apps
-  methods: ['POST'],
-  allowedHeaders: ['Content-Type', 'Authorization'], // Adjust headers as needed
-}));
-
-// Use Helmet to Set Security Headers
-app.use(helmet());
-
-// Rate Limiting to Prevent Abuse
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again after 15 minutes.',
-});
-app.use(limiter);
-
-// Middleware to Parse JSON Bodies
-app.use(express.json());
-
-// Initialize Winston Logger
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
+// ✅ Upload Route (Protect it with authenticateToken if needed)
+app.post(
+  '/upload-image',
+  authenticateToken, // Remove this if you don't need authentication
+  upload.single('image'),
+  [
+    body('exitName').isString().notEmpty(),
+    body('latitude').isFloat({ min: -90, max: 90 }),
+    body('longitude').isFloat({ min: -180, max: 180 })
   ],
-});
+  uploadController.uploadImage
+);
 
-// If Not in Production, Also Log to Console
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.simple(),
-  }));
-}
-
-// Import Controllers and Middleware
-const authController = require('./controllers/authController');
-const uploadController = require('./controllers/uploadController');
-const authenticateToken = require('./middleware/authenticateToken');
-
-// Routes
-app.post('/register', [
-  body('username').isString().notEmpty(),
-  body('email').isEmail(),
-  body('password').isLength({ min: 6 }),
-], authController.register);
-
-app.post('/login', [
-  body('email').isEmail(),
-  body('password').isString().notEmpty(),
-], authController.login);
-
-app.post('/upload-image', authenticateToken, upload.single('image'), [
-  body('exitName').isString().notEmpty(),
-  body('latitude').isFloat({ min: -90, max: 90 }),
-  body('longitude').isFloat({ min: -180, max: 180 }),
-], uploadController.uploadImage);
-
-// Global Error Handling Middleware
+// ✅ Global Error Handler (Catches all unexpected errors)
 app.use((err, req, res, next) => {
-  logger.error('Unhandled Error:', err.message);
-  if (err instanceof multer.MulterError) {
-    // Handle Multer-specific errors
-    return res.status(400).json({ result: 'error', message: err.message });
-  }
-  res.status(500).json({ result: 'error', message: 'An unexpected error occurred.' });
+  console.error('❌ Server Error:', err.message);
+  res.status(500).json({ result: 'error', message: 'Internal server error' });
 });
 
-// Start the Server
-app.listen(PORT, () => {
-  logger.info(`Server is running on port ${PORT}`);
+// ✅ Start Server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
