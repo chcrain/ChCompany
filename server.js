@@ -39,7 +39,6 @@ const upload = multer({
 // ✅ Upload Route (Protect it with authenticateToken if needed)
 app.post(
   '/upload-image',
-  authenticateToken, // Remove this if you don't need authentication
   upload.single('image'),
   [
     body('exitName').isString().notEmpty(),
@@ -48,6 +47,7 @@ app.post(
   ],
   uploadController.uploadImage
 );
+
 
 // ✅ Global Error Handler (Catches all unexpected errors)
 app.use((err, req, res, next) => {
