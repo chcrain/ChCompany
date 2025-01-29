@@ -37,16 +37,17 @@ const upload = multer({
 });
 
 // ✅ Upload Route (Protect it with authenticateToken if needed)
-app.post(
-  '/upload-image',
-  upload.single('image'),
-  [
-    body('exitName').isString().notEmpty(),
-    body('latitude').isFloat({ min: -90, max: 90 }),
-    body('longitude').isFloat({ min: -180, max: 180 })
-  ],
-  uploadController.uploadImage
-);
+app.post('/upload-image', upload.single('image'), (req, res) => {
+  console.log('Received Request Body:', req.body);
+  console.log('Received File:', req.file);
+
+  if (!req.file) {
+    return res.status(400).json({ result: 'error', message: 'No file uploaded' });
+  }
+
+  res.status(200).json({ result: 'success', message: 'File uploaded successfully' });
+});
+
 
 
 // ✅ Global Error Handler (Catches all unexpected errors)
