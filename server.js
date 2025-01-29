@@ -4,7 +4,10 @@ const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
 const { body } = require('express-validator');
-const morgan = require('morgan'); // ✅ Ensure Morgan is imported
+const morgan = require('morgan'); // ✅ Logging
+const fs = require('fs');
+const path = require('path');
+const { S3 } = require('aws-sdk'); // ✅ AWS SDK for Cloudflare R2
 
 const authenticateToken = require('./middleware/authenticateToken');
 const uploadController = require('./controllers/uploadController');
@@ -16,6 +19,14 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev')); // ✅ Logs all incoming requests in 'dev' mode
+
+// ✅ Cloudflare R2 Configuration
+const s3 = new S3({
+  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`, 
+  accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
+  secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
+  signatureVersion: 'v4',
+});
 
 // ✅ Root Route (Avoid "Cannot GET /")
 app.get('/', (req, res) => {
@@ -36,19 +47,45 @@ const upload = multer({
   }
 });
 
-// ✅ Upload Route (Protect it with authenticateToken if needed)
-app.post('/upload-image', upload.single('image'), (req, res) => {
-  console.log('Received Request Body:', req.body);
-  console.log('Received File:', req.file);
+// ✅ Upload Route (Uploads file to Cloudflare R2)
+app.post('/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ result: 'error', message: 'No file uploaded' });
+    }
 
-  if (!req.file) {
-    return res.status(400).json({ result: 'error', message: 'No file uploaded' });
+    console.log('Received Request Body:', req.body);
+    console.log('Received File:', req.file);
+
+    // Read file from local uploads folder
+    const filePath = req.file.path;
+    const fileStream = fs.createReadStream(filePath);
+    const fileExtension = path.extname(req.file.originalname);
+    const cloudFileName = `${Date.now()}_${req.file.filename}${fileExtension}`;
+
+    // ✅ Upload to Cloudflare R2
+    const uploadParams = {
+      Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+      Key: cloudFileName,
+      Body: fileStream,
+      ContentType: req.file.mimetype,
+    };
+
+    await s3.upload(uploadParams).promise();
+
+    // ✅ Cleanup local file after successful upload
+    fs.unlinkSync(filePath);
+
+    return res.status(200).json({
+      result: 'success',
+      message: 'File uploaded successfully',
+      fileUrl: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.CLOUDFLARE_BUCKET_NAME}/${cloudFileName}`
+    });
+  } catch (error) {
+    console.error('Upload Error:', error);
+    return res.status(500).json({ result: 'error', message: 'Failed to upload file' });
   }
-
-  res.status(200).json({ result: 'success', message: 'File uploaded successfully' });
 });
-
-
 
 // ✅ Global Error Handler (Catches all unexpected errors)
 app.use((err, req, res, next) => {
