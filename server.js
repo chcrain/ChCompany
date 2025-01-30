@@ -44,22 +44,29 @@ app.get('/', (req, res) => {
 // ✅ Upload Route (Handles Image Uploads)
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
-    // ✅ Ensure File Exists
     if (!req.file) {
       console.error('❌ No file uploaded');
       return res.status(400).json({ result: 'error', message: 'No file uploaded' });
     }
 
+    // Get additional parameters from the request
+    const { username, exitName, latitude, longitude } = req.body;
+    if (!username || !exitName || !latitude || !longitude) {
+      return res.status(400).json({ 
+        result: 'error', 
+        message: 'Missing required parameters: username, exitName, latitude, longitude' 
+      });
+    }
+
     console.log('📦 Received Request Body:', req.body);
     console.log('🖼️ Received File:', req.file);
 
-    // ✅ Read the file from local storage
+    // Upload to Cloudflare R2
     const filePath = req.file.path;
     const fileStream = fs.createReadStream(filePath);
     const fileExtension = path.extname(req.file.originalname);
     const cloudFileName = `${Date.now()}_${req.file.filename}${fileExtension}`;
 
-    // ✅ Upload to Cloudflare R2
     const uploadParams = {
       Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
       Key: cloudFileName,
@@ -71,22 +78,44 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     const uploadResponse = await s3.upload(uploadParams).promise();
     console.log('✅ Upload Successful:', uploadResponse);
 
-    // ✅ Cleanup local file after successful upload
+    // Clean up local file
     fs.unlinkSync(filePath);
 
-    // ✅ Return Cloudflare R2 File URL
+    // Generate the R2.dev URL
+    const r2DevUrl = `https://pub-${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.dev/${cloudFileName}`;
+
+    // Make request to Google Apps Script web app
+    const googleScriptUrl = 'https://script.google.com/macros/s/AKfycbyboJUnpe14yc-IFsnUMOYmMFUQtCNShc9qdDyrElPoy8tmNPY4sLIqEE7awBt3mGVJ/exec';
+    const response = await fetch(googleScriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'logImage',
+        username,
+        exitName,
+        imageUrl: r2DevUrl,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude)
+      })
+    });
+
+    const scriptResponse = await response.json();
+    if (scriptResponse.result !== 'success') {
+      throw new Error(scriptResponse.message);
+    }
+
     return res.status(200).json({
       result: 'success',
-      message: 'File uploaded successfully',
-      fileUrl: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.CLOUDFLARE_BUCKET_NAME}/${cloudFileName}`
+      message: 'File uploaded and logged successfully',
+      fileUrl: r2DevUrl
     });
   } catch (error) {
     console.error('❌ Upload Error:', error);
-    return res.status(500).json({ result: 'error', message: 'Failed to upload file' });
+    return res.status(500).json({ result: 'error', message: 'Failed to process upload' });
   }
-});
-
-// ✅ Global Error Handler
+});// ✅ Global Error Handler
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err.message);
   res.status(500).json({ result: 'error', message: 'Internal server error' });
