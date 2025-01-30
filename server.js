@@ -3,14 +3,31 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
-const AWS = require('aws-sdk'); // ✅ Import AWS SDK for Cloudflare R2
+const AWS = require('aws-sdk');
 const fs = require('fs');
 const path = require('path');
-const morgan = require('morgan'); // ✅ Logging Middleware
+const morgan = require('morgan');
 
 const app = express();
 
-// ✅ Log Cloudflare Credentials (For Debugging)
+// Define required environment variables and Google Script URL
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwDCXj7m6vTn_JeVKxHnqfas5q94U43K9C-ppJur14IUOtvypFrVirNFuxKkrbmRInV/exec';
+const REQUIRED_ENV_VARS = [
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CLOUDFLARE_BUCKET_NAME',
+  'CLOUDFLARE_ACCESS_KEY_ID',
+  'CLOUDFLARE_SECRET_ACCESS_KEY'
+];
+
+// Check for required environment variables
+REQUIRED_ENV_VARS.forEach(envVar => {
+  if (!process.env[envVar]) {
+    console.error(`❌ Missing required environment variable: ${envVar}`);
+    process.exit(1);
+  }
+});
+
+// Log Cloudflare Credentials (For Debugging)
 console.log('Cloudflare Credentials:', {
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || 'MISSING',
   CLOUDFLARE_BUCKET_NAME: process.env.CLOUDFLARE_BUCKET_NAME || 'MISSING',
@@ -18,17 +35,16 @@ console.log('Cloudflare Credentials:', {
   CLOUDFLARE_SECRET_ACCESS_KEY: process.env.CLOUDFLARE_SECRET_ACCESS_KEY || 'MISSING',
 });
 
-
-// ✅ Middleware
+// Middleware
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
-app.use(morgan('dev')); // ✅ Logs all requests
+app.use(morgan('dev'));
 
-// ✅ Configure Multer for File Uploads
+// Configure Multer for File Uploads
 const upload = multer({ dest: 'uploads/' });
 
-// ✅ Cloudflare R2 Configuration (AWS SDK)
+// Cloudflare R2 Configuration (AWS SDK)
 const s3 = new AWS.S3({
   endpoint: new AWS.Endpoint(`https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`),
   accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
@@ -36,11 +52,12 @@ const s3 = new AWS.S3({
   signatureVersion: 'v4',
 });
 
-// ✅ Root Route (For Testing)
+// Root Route (For Testing)
 app.get('/', (req, res) => {
   res.status(200).send('🚀 Server is running!');
 });
 
+// Upload Image Route
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
     console.log('Received upload request with body:', req.body);
@@ -88,9 +105,12 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     // Generate the R2.dev URL
     const r2DevUrl = `https://pub-${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.dev/${cloudFileName}`;
     
+    // Log the Google Script URL (for debugging)
+    console.log('Google Script URL:', GOOGLE_SCRIPT_URL);
+
     // Make request to Google Apps Script web app
     console.log('📝 Logging to Google Sheet...');
-    const scriptResponse = await fetch(process.env.GOOGLE_SCRIPT_URL, {
+    const scriptResponse = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -120,6 +140,7 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
 
   } catch (error) {
     console.error('❌ Upload Error:', error);
+    console.error('Error details:', error.cause || error);
     return res.status(500).json({ 
       result: 'error', 
       message: error.message || 'Failed to process upload'
@@ -127,16 +148,15 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ Global Error Handler
+// Global Error Handler
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err.message);
   res.status(500).json({ result: 'error', message: 'Internal server error' });
 });
 
-// ✅ Start Server
+// Start Server
 const PORT = process.env.PORT || 5000;
 
-// ✅ Prevent "Address Already in Use" Error
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
