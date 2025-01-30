@@ -41,32 +41,44 @@ app.get('/', (req, res) => {
   res.status(200).send('🚀 Server is running!');
 });
 
-// ✅ Upload Route (Handles Image Uploads)
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
-    if (!req.file) {
-      console.error('❌ No file uploaded');
-      return res.status(400).json({ result: 'error', message: 'No file uploaded' });
-    }
+    // Log the entire request body and file for debugging
+    console.log('Request body:', req.body);
+    console.log('File:', req.file);
 
-    // Get additional parameters from the request
-    const { username, exitName, latitude, longitude } = req.body;
-    if (!username || !exitName || !latitude || !longitude) {
+    // Check for file
+    if (!req.file) {
       return res.status(400).json({ 
         result: 'error', 
-        message: 'Missing required parameters: username, exitName, latitude, longitude' 
+        message: 'No file uploaded' 
       });
     }
 
-    console.log('📦 Received Request Body:', req.body);
-    console.log('🖼️ Received File:', req.file);
+    // Check for required fields in req.body
+    const { username, exitName, latitude, longitude } = req.body;
+    
+    // Detailed validation with specific error messages
+    const missingFields = [];
+    if (!username) missingFields.push('username');
+    if (!exitName) missingFields.push('exitName');
+    if (!latitude) missingFields.push('latitude');
+    if (!longitude) missingFields.push('longitude');
 
-    // Upload to Cloudflare R2
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        result: 'error',
+        message: `Missing required fields: ${missingFields.join(', ')}`
+      });
+    }
+
+    // Process file upload
     const filePath = req.file.path;
     const fileStream = fs.createReadStream(filePath);
     const fileExtension = path.extname(req.file.originalname);
     const cloudFileName = `${Date.now()}_${req.file.filename}${fileExtension}`;
 
+    // Upload to Cloudflare R2
     const uploadParams = {
       Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
       Key: cloudFileName,
@@ -74,48 +86,39 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
       ContentType: req.file.mimetype,
     };
 
-    console.log('🚀 Uploading file to Cloudflare R2...');
+    console.log('Uploading to Cloudflare R2...');
     const uploadResponse = await s3.upload(uploadParams).promise();
-    console.log('✅ Upload Successful:', uploadResponse);
+    console.log('Upload successful:', uploadResponse);
 
     // Clean up local file
     fs.unlinkSync(filePath);
 
-    // Generate the R2.dev URL
+    // Generate R2.dev URL
     const r2DevUrl = `https://pub-${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.dev/${cloudFileName}`;
 
-    // Make request to Google Apps Script web app
-    const googleScriptUrl = 'https://script.google.com/macros/s/AKfycbyboJUnpe14yc-IFsnUMOYmMFUQtCNShc9qdDyrElPoy8tmNPY4sLIqEE7awBt3mGVJ/exec';
-    const response = await fetch(googleScriptUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'logImage',
-        username,
-        exitName,
-        imageUrl: r2DevUrl,
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude)
-      })
-    });
-
-    const scriptResponse = await response.json();
-    if (scriptResponse.result !== 'success') {
-      throw new Error(scriptResponse.message);
-    }
-
+    // Return success response
     return res.status(200).json({
       result: 'success',
-      message: 'File uploaded and logged successfully',
-      fileUrl: r2DevUrl
+      message: 'File uploaded successfully',
+      fileUrl: r2DevUrl,
+      data: {
+        username,
+        exitName,
+        latitude,
+        longitude
+      }
     });
+
   } catch (error) {
-    console.error('❌ Upload Error:', error);
-    return res.status(500).json({ result: 'error', message: 'Failed to process upload' });
+    console.error('Upload error:', error);
+    return res.status(500).json({ 
+      result: 'error', 
+      message: error.message || 'Failed to upload file' 
+    });
   }
-});// ✅ Global Error Handler
+});
+
+// ✅ Global Error Handler
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err.message);
   res.status(500).json({ result: 'error', message: 'Internal server error' });
