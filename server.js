@@ -102,8 +102,9 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     // Clean up local file
     fs.unlinkSync(filePath);
 
-    // Generate the R2.dev URL
-    const r2DevUrl = `https://pub-${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.dev/${cloudFileName}`;
+    const correctBucketID = 'db46a71a85194bcdbc1e927860cce1fa'; // ✅ Force the correct bucket
+	const r2DevUrl = `https://pub-${correctBucketID}.r2.dev/${cloudFileName}`;
+
     
     // Log the Google Script URL (for debugging)
     console.log('Google Script URL:', GOOGLE_SCRIPT_URL);
