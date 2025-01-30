@@ -43,42 +43,31 @@ app.get('/', (req, res) => {
 
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
-    // Log the entire request body and file for debugging
-    console.log('Request body:', req.body);
-    console.log('File:', req.file);
-
-    // Check for file
     if (!req.file) {
-      return res.status(400).json({ 
-        result: 'error', 
-        message: 'No file uploaded' 
-      });
+      console.error('❌ No file uploaded');
+      return res.status(400).json({ result: 'error', message: 'No file uploaded' });
     }
 
-    // Check for required fields in req.body
+    // Extract parameters from the request
     const { username, exitName, latitude, longitude } = req.body;
     
-    // Detailed validation with specific error messages
-    const missingFields = [];
-    if (!username) missingFields.push('username');
-    if (!exitName) missingFields.push('exitName');
-    if (!latitude) missingFields.push('latitude');
-    if (!longitude) missingFields.push('longitude');
-
-    if (missingFields.length > 0) {
+    // Validate all required fields
+    if (!username || !exitName || !latitude || !longitude) {
+      console.error('Missing parameters:', { username, exitName, latitude, longitude });
       return res.status(400).json({
         result: 'error',
-        message: `Missing required fields: ${missingFields.join(', ')}`
+        message: 'Missing required parameters: username, exitName, latitude, longitude'
       });
     }
 
-    // Process file upload
+    console.log('📦 Processing upload for:', { username, exitName, latitude, longitude });
+
+    // Upload to Cloudflare R2
     const filePath = req.file.path;
     const fileStream = fs.createReadStream(filePath);
     const fileExtension = path.extname(req.file.originalname);
     const cloudFileName = `${Date.now()}_${req.file.filename}${fileExtension}`;
 
-    // Upload to Cloudflare R2
     const uploadParams = {
       Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
       Key: cloudFileName,
@@ -86,34 +75,51 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
       ContentType: req.file.mimetype,
     };
 
-    console.log('Uploading to Cloudflare R2...');
+    console.log('🚀 Uploading to Cloudflare R2...');
     const uploadResponse = await s3.upload(uploadParams).promise();
-    console.log('Upload successful:', uploadResponse);
+    console.log('✅ Upload to R2 successful:', uploadResponse);
 
     // Clean up local file
     fs.unlinkSync(filePath);
 
-    // Generate R2.dev URL
+    // Generate the R2.dev URL
     const r2DevUrl = `https://pub-${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.dev/${cloudFileName}`;
-
-    // Return success response
-    return res.status(200).json({
-      result: 'success',
-      message: 'File uploaded successfully',
-      fileUrl: r2DevUrl,
-      data: {
+    
+    // Make request to Google Apps Script web app
+    const googleScriptUrl = 'https://script.google.com/macros/s/AKfycbwUzs7chfz-tZR6kKooj447yR81o3Op4bti0bQDFflFdyIFhXcZWhF8vpkoufvTxBem/exec'; // Replace with your actual Google Script URL
+    const scriptResponse = await fetch(googleScriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'logImage',
         username,
         exitName,
-        latitude,
-        longitude
-      }
+        imageUrl: r2DevUrl,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude)
+      })
+    });
+
+    const scriptResult = await scriptResponse.json();
+    console.log('Google Script response:', scriptResult);
+
+    if (scriptResult.result !== 'success') {
+      throw new Error(`Failed to log in spreadsheet: ${scriptResult.message}`);
+    }
+
+    return res.status(200).json({
+      result: 'success',
+      message: 'File uploaded and logged successfully',
+      fileUrl: r2DevUrl
     });
 
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('❌ Upload Error:', error);
     return res.status(500).json({ 
       result: 'error', 
-      message: error.message || 'Failed to upload file' 
+      message: error.message || 'Failed to process upload'
     });
   }
 });
