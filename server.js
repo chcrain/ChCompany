@@ -43,6 +43,9 @@ app.get('/', (req, res) => {
 
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
+    console.log('Received upload request with body:', req.body);
+    console.log('Username:', req.body.username);
+    
     if (!req.file) {
       console.error('❌ No file uploaded');
       return res.status(400).json({ result: 'error', message: 'No file uploaded' });
@@ -60,7 +63,7 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
       });
     }
 
-    console.log('📦 Processing upload for:', { username, exitName, latitude, longitude });
+    console.log('📦 Processing upload for user:', username);
 
     // Upload to Cloudflare R2
     const filePath = req.file.path;
@@ -86,8 +89,8 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     const r2DevUrl = `https://pub-${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.dev/${cloudFileName}`;
     
     // Make request to Google Apps Script web app
-    const googleScriptUrl = 'https://script.google.com/macros/s/AKfycbwUzs7chfz-tZR6kKooj447yR81o3Op4bti0bQDFflFdyIFhXcZWhF8vpkoufvTxBem/exec'; // Replace with your actual Google Script URL
-    const scriptResponse = await fetch(googleScriptUrl, {
+    console.log('📝 Logging to Google Sheet...');
+    const scriptResponse = await fetch(process.env.GOOGLE_SCRIPT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
