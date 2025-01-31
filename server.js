@@ -11,7 +11,7 @@ const morgan = require('morgan');
 const app = express();
 
 // Define required environment variables and Google Script URL
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwTyy-Zwo0vI1j49gREeIMnbpbfBasfg29UnZKMu3SqJiD8gzOkjPoZu8INYo13822E/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxjB5HRXSMMld3lEgE05Jshp2TETcxMihyZnqqICjKYgOrP1U9BuAL-elj1XuBoczI/exec';
 const REQUIRED_ENV_VARS = [
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_BUCKET_NAME',
