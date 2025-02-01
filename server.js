@@ -155,6 +155,54 @@ app.use((err, req, res, next) => {
   res.status(500).json({ result: 'error', message: 'Internal server error' });
 });
 
+// Add this endpoint to handle photo retrieval
+app.get('/getPhotos', async (req, res) => {
+  try {
+    console.log('Received getPhotos request with query:', req.query);
+    
+    // Extract parameters from query
+    const { username, exitName, latitude, longitude } = req.query;
+    
+    // Validate required parameters
+    if (!username || !exitName || !latitude || !longitude) {
+      console.error('Missing parameters:', { username, exitName, latitude, longitude });
+      return res.status(400).json({
+        result: 'error',
+        message: 'Missing required parameters: username, exitName, latitude, longitude'
+      });
+    }
+
+    console.log('Fetching photos from Google Script...');
+    
+    // Construct the URL with query parameters
+    const params = new URLSearchParams({
+      action: 'getPhotos',
+      username,
+      exitName,
+      latitude,
+      longitude
+    });
+    
+    const scriptUrl = `${GOOGLE_SCRIPT_URL}?${params.toString()}`;
+    console.log('Requesting from Google Script URL:', scriptUrl);
+
+    const scriptResponse = await fetch(scriptUrl);
+    const scriptResult = await scriptResponse.json();
+    
+    console.log('Google Script response:', scriptResult);
+
+    // Return the response from Google Script
+    return res.status(200).json(scriptResult);
+
+  } catch (error) {
+    console.error('❌ GetPhotos Error:', error);
+    return res.status(500).json({ 
+      result: 'error', 
+      message: error.message || 'Failed to retrieve photos'
+    });
+  }
+});
+
 // Start Server
 const PORT = process.env.PORT || 5000;
 
