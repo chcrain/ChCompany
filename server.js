@@ -3,17 +3,35 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 
 const app = express();
-app.use(cors()); // Enables CORS for frontend requests
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu33jA6iKrA0I_VjRzl7Bzd-RhO8gxhcFAZ0FzoBkNM4ynETOT0qNxFTZrE8XC33Np/exec";
+// ✅ Explicitly allow requests from your frontend
+app.use(cors({
+    origin: '*', // Change this to your frontend URL for security
+    methods: ['GET'],
+    allowedHeaders: ['Content-Type'],
+}));
+
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxhTe9qtYmrwUDiK6tbFd2xbZlWrxfnyrWosD2dN9tsBi4g6cu1vnqQNNdnFFIoUw6a/exec";
 
 app.get('/products', async (req, res) => {
     try {
         console.log("Fetching data from Google Sheets...");
+        
         const response = await fetch(GOOGLE_SCRIPT_URL);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
         const data = await response.json();
         console.log("Data received:", data);
-        res.json(data); // ✅ Forwarding the JSON to the frontend
+        
+        // ✅ Add CORS headers manually
+        res.setHeader("Access-Control-Allow-Origin", "*"); 
+        res.setHeader("Access-Control-Allow-Methods", "GET");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+        res.json(data); // ✅ Send data to frontend
     } catch (error) {
         console.error("Error fetching data:", error);
         res.status(500).json({ error: "Failed to fetch data" });
