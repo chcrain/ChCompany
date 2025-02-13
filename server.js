@@ -4,7 +4,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxATdS6T1fSmk9hVIBwhlR0dnhGruk6e1kCz846ZM48T-uH07CoGoQGKAaqkOSkz0Kn/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwLEvtbq7wZbM0hHJ0dXzQPF4aAou7WZK4RTZZMFJJwAKS1UweGo-btQCrUUfJPiDvk/exec";
 
 app.get('/products', async (req, res) => {
     try {
@@ -19,5 +19,5 @@ app.get('/products', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
