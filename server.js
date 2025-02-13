@@ -1,17 +1,19 @@
-const express = require('express');
-const cors = require('cors');
+const express = require("express");
+const cors = require("cors");
+const fetch = require("node-fetch");
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Enable CORS
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu33jA6iKrA0I_VjRzl7Bzd-RhO8gxhcFAZ0FzoBkNM4ynETOT0qNxFTZrE8XC33Np/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxhTe9qtYmrwUDiK6tbFd2xbZlWrxfnyrWosD2dN9tsBi4g6cu1vnqQNNdnFFIoUw6a/exec";
 
-app.get('/products', async (req, res) => {
+app.get("/products", async (req, res) => {
     try {
-        console.log("Fetching data from Google Sheets...");
         const response = await fetch(GOOGLE_SCRIPT_URL);
+        if (!response.ok) {
+            throw new Error("Failed to fetch data from Google Scripts");
+        }
         const data = await response.json();
-        console.log("Data received:", data);
         res.json(data);
     } catch (error) {
         console.error("Error fetching data:", error);
@@ -19,5 +21,7 @@ app.get('/products', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
