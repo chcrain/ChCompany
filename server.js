@@ -3,34 +3,38 @@ const cors = require("cors");
 const fetch = require("node-fetch");
 const app = express();
 
-// Allow requests from any origin
+// First, set up CORS middleware with explicit options
 app.use(cors({
   origin: '*',
   methods: ['GET'],
-  optionsSuccessStatus: 200
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 // Your Google Script URL
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySYrjVDsztSZQW0hK0jUDqsURu-cOoZfLXGVk7AwiWRAU510J0M0_uQN596cE0fMIr/exec";
 
-// Root route
-app.get("/", (req, res) => {
-  res.send("Server is running! Try /products endpoint");
-});
-
-// Products endpoint
 app.get("/products", async (req, res) => {
   try {
-    // Fetch data from Google Script
+    // Explicitly set headers before making the fetch
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET');
+    
     const response = await fetch(GOOGLE_SCRIPT_URL);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    // Parse and send the data
     const data = await response.json();
-    res.json(data);
+    
+    // Send the response with explicit headers
+    res.set({
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }).json(data);
     
   } catch (error) {
     console.error("Error fetching products:", error);
@@ -41,7 +45,6 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
