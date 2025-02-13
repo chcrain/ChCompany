@@ -11,7 +11,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type']
 }));
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu33jA6iKrA0I_VjRzl7Bzd-RhO8gxhcFAZ0FzoBkNM4ynETOT0qNxFTZrE8XC33Np/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwLKMRfd3UFuPyk4adRHpyWbSsxy29XZH3vWEOd7uNDAHW6fcvyr57bTgLRJjVRXwMY/exec";
 
 app.get('/products', async (req, res) => {
   try {
