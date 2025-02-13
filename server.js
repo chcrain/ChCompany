@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch'); // ✅ Add this line
+const fetch = require('node-fetch');  // ✅ Ensure this import exists
 
 const app = express();
 app.use(cors());
