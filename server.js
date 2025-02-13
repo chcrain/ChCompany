@@ -4,7 +4,6 @@ const fetch = require('node-fetch');
 
 const app = express();
 
-// Enable CORS for all origins since it's a deployed service
 app.use(cors({
   origin: '*',
   methods: ['GET'],
