@@ -1,211 +1,35 @@
-require('dotenv').config();
 const express = require('express');
+const fetch = require('node-fetch');
 const cors = require('cors');
-const helmet = require('helmet');
-const multer = require('multer');
-const AWS = require('aws-sdk');
-const fs = require('fs');
-const path = require('path');
-const morgan = require('morgan');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Define required environment variables and Google Script URL
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycTHnxExkDx5zsShht7MGo8l3GkpbJ_7PhAtXx5rVKJtGtiqo1QbA7IUkBHLTE-eVa/exec';
-const REQUIRED_ENV_VARS = [
-  'CLOUDFLARE_ACCOUNT_ID',
-  'CLOUDFLARE_BUCKET_NAME',
-  'CLOUDFLARE_ACCESS_KEY_ID',
-  'CLOUDFLARE_SECRET_ACCESS_KEY'
-];
-
-// Check for required environment variables
-REQUIRED_ENV_VARS.forEach(envVar => {
-  if (!process.env[envVar]) {
-    console.error(`❌ Missing required environment variable: ${envVar}`);
-    process.exit(1);
-  }
-});
-
-// Log Cloudflare Credentials (For Debugging)
-console.log('Cloudflare Credentials:', {
-  CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || 'MISSING',
-  CLOUDFLARE_BUCKET_NAME: process.env.CLOUDFLARE_BUCKET_NAME || 'MISSING',
-  CLOUDFLARE_ACCESS_KEY_ID: process.env.CLOUDFLARE_ACCESS_KEY_ID || 'MISSING',
-  CLOUDFLARE_SECRET_ACCESS_KEY: process.env.CLOUDFLARE_SECRET_ACCESS_KEY || 'MISSING',
-});
-
-// Middleware
-app.use(helmet());
+// Enable CORS for all requests
 app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
 
-// Configure Multer for File Uploads
-const upload = multer({ dest: 'uploads/' });
+// Proxy endpoint for fetching products
+app.get('/products', async (req, res) => {
+    try {
+        const scriptUrl = 'https://script.google.com/macros/s/AKfycbzm6r970nvjiLJtNkwtnRncrGs7OGRxv_iD0NVXVMXevRfgsMdMhQ5R3rQX7kub-kP4/exec';
+        const scriptRes = await fetch(scriptUrl);
+        if (!scriptRes.ok) {
+            throw new Error(`Google Apps Script error: ${scriptRes.statusText}`);
+        }
+        const data = await scriptRes.json();
 
-// Cloudflare R2 Configuration (AWS SDK)
-const s3 = new AWS.S3({
-  endpoint: new AWS.Endpoint(`https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`),
-  accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
-  secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-  signatureVersion: 'v4',
-});
+        // Set CORS headers manually if needed
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
-// Root Route (For Testing)
-app.get('/', (req, res) => {
-  res.status(200).send('🚀 Server is running!');
-});
-
-// Upload Image Route
-app.post('/upload-image', upload.single('image'), async (req, res) => {
-  try {
-    console.log('Received upload request with body:', req.body);
-    console.log('Username:', req.body.username);
-    
-    if (!req.file) {
-      console.error('❌ No file uploaded');
-      return res.status(400).json({ result: 'error', message: 'No file uploaded' });
+        res.json(data);
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        res.status(500).json({ error: 'Failed to fetch product data' });
     }
-
-    // Extract parameters from the request
-    const { username, exitName, latitude, longitude } = req.body;
-    
-    // Validate all required fields
-    if (!username || !exitName || !latitude || !longitude) {
-      console.error('Missing parameters:', { username, exitName, latitude, longitude });
-      return res.status(400).json({
-        result: 'error',
-        message: 'Missing required parameters: username, exitName, latitude, longitude'
-      });
-    }
-
-    console.log('📦 Processing upload for user:', username);
-
-    // Upload to Cloudflare R2
-    const filePath = req.file.path;
-    const fileStream = fs.createReadStream(filePath);
-    const fileExtension = path.extname(req.file.originalname);
-    const cloudFileName = `${Date.now()}_${req.file.filename}${fileExtension}`;
-
-    const uploadParams = {
-      Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
-      Key: cloudFileName,
-      Body: fileStream,
-      ContentType: req.file.mimetype,
-    };
-
-    console.log('🚀 Uploading to Cloudflare R2...');
-    const uploadResponse = await s3.upload(uploadParams).promise();
-    console.log('✅ Upload to R2 successful:', uploadResponse);
-
-    // Clean up local file
-    fs.unlinkSync(filePath);
-
-    const correctBucketID = 'c2f46ab877f445158f637f7eb23d276d'; // ✅ Force the correct bucket
-	const r2DevUrl = `https://pub-${correctBucketID}.r2.dev/${cloudFileName}`;
-
-    
-    // Log the Google Script URL (for debugging)
-    console.log('Google Script URL:', GOOGLE_SCRIPT_URL);
-
-    // Make request to Google Apps Script web app
-    console.log('📝 Logging to Google Sheet...');
-    const scriptResponse = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'logImage',
-        username,
-        exitName,
-        imageUrl: r2DevUrl,
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude)
-      })
-    });
-
-    const scriptResult = await scriptResponse.json();
-    console.log('Google Script response:', scriptResult);
-
-    if (scriptResult.result !== 'success') {
-      throw new Error(`Failed to log in spreadsheet: ${scriptResult.message}`);
-    }
-
-    return res.status(200).json({
-      result: 'success',
-      message: 'File uploaded and logged successfully',
-      fileUrl: r2DevUrl
-    });
-
-  } catch (error) {
-    console.error('❌ Upload Error:', error);
-    console.error('Error details:', error.cause || error);
-    return res.status(500).json({ 
-      result: 'error', 
-      message: error.message || 'Failed to process upload'
-    });
-  }
 });
 
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('❌ Server Error:', err.message);
-  res.status(500).json({ result: 'error', message: 'Internal server error' });
-});
-
-// Add this endpoint to handle photo retrieval
-app.get('/getPhotos', async (req, res) => {
-  try {
-    console.log('Received getPhotos request with query:', req.query);
-    
-    // Extract parameters from query
-    const { username, exitName, latitude, longitude } = req.query;
-    
-    // Validate required parameters
-    if (!username || !exitName || !latitude || !longitude) {
-      console.error('Missing parameters:', { username, exitName, latitude, longitude });
-      return res.status(400).json({
-        result: 'error',
-        message: 'Missing required parameters: username, exitName, latitude, longitude'
-      });
-    }
-
-    console.log('Fetching photos from Google Script...');
-    
-    // Construct the URL with query parameters
-    const params = new URLSearchParams({
-      action: 'getPhotos',
-      username,
-      exitName,
-      latitude,
-      longitude
-    });
-    
-    const scriptUrl = `${GOOGLE_SCRIPT_URL}?${params.toString()}`;
-    console.log('Requesting from Google Script URL:', scriptUrl);
-
-    const scriptResponse = await fetch(scriptUrl);
-    const scriptResult = await scriptResponse.json();
-    
-    console.log('Google Script response:', scriptResult);
-
-    // Return the response from Google Script
-    return res.status(200).json(scriptResult);
-
-  } catch (error) {
-    console.error('❌ GetPhotos Error:', error);
-    return res.status(500).json({ 
-      result: 'error', 
-      message: error.message || 'Failed to retrieve photos'
-    });
-  }
-});
-
-// Start Server
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
