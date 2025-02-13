@@ -102,7 +102,7 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     // Clean up local file
     fs.unlinkSync(filePath);
 
-    const correctBucketID = 'db46a71a85194bcdbc1e927860cce1fa'; // ✅ Force the correct bucket
+    const correctBucketID = 'c2f46ab877f445158f637f7eb23d276d'; // ✅ Force the correct bucket
 	const r2DevUrl = `https://pub-${correctBucketID}.r2.dev/${cloudFileName}`;
 
     
