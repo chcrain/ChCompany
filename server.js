@@ -4,7 +4,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJt5r1nQnML-k53KGWVEViQZTkeSIktkUAJNdnnz0lygkixzjVwoPbHhWIzhFm-h1e/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu33jA6iKrA0I_VjRzl7Bzd-RhO8gxhcFAZ0FzoBkNM4ynETOT0qNxFTZrE8XC33Np/exec";
 
 app.get('/products', async (req, res) => {
     try {
