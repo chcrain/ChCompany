@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 const app = express();
 app.use(cors());
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu33jA6iKrA0I_VjRzl7Bzd-RhO8gxhcFAZ0FzoBkNM4ynETOT0qNxFTZrE8XC33Np/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxaOX_l-Bt5xUsVWmMIJZ5808npns7TM750PnplrGoVk_J3rs9LEwfsLvOR5m5T9ROR/exec";
 
 app.get('/products', async (req, res) => {
     try {
