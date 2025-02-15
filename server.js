@@ -1,31 +1,40 @@
 const express = require("express");
 const cors = require("cors");
+const multer = require("multer");
 const { Pool } = require("pg");
 
 const app = express();
 app.use(cors());
-app.use(express.json()); // Allows sending JSON data in requests
+app.use(express.json());
 
-// Database connection using environment variable
+// PostgreSQL connection (make sure POSTGRES_CONNECTION_URL is set in your Render environment)
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_CONNECTION_URL, // Ensure this is set in Render
-  ssl: {
-    rejectUnauthorized: false, // Required for connecting to Render's managed PostgreSQL
-  },
+  connectionString: process.env.POSTGRES_CONNECTION_URL,
+  ssl: { rejectUnauthorized: false },
 });
 
-// ✅ Route to Fetch All Products
-app.get("/products", async (req, res) => {
+// Configure Multer for file uploads (using memory storage)
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
+// POST /upload: Handle image upload and return a public URL from your R2 bucket
+app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM products WHERE market = TRUE");
-    res.json(result.rows);
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    // Construct the public URL using your R2 bucket base URL and the original file name.
+    // In a real scenario, you'd upload the file to R2 using an S3-compatible API.
+    const publicUrl = `https://pub-c2f46ab877f445158f637f7eb23d276d.r2.dev/${file.originalname}`;
+    res.json({ url: publicUrl });
   } catch (error) {
-    console.error("Error fetching products:", error);
-    res.status(500).json({ error: "Failed to fetch product data" });
+    console.error("Error uploading image:", error);
+    res.status(500).json({ error: "Failed to upload image" });
   }
 });
 
-// ✅ Route to Add a New Product
+// POST /add-product: Insert a new product into PostgreSQL
 app.post("/add-product", async (req, res) => {
   try {
     const { name, description, price, imageUrl, market } = req.body;
@@ -40,36 +49,20 @@ app.post("/add-product", async (req, res) => {
   }
 });
 
-// ✅ Route to Update Product Market Status
-app.put("/update-market/:id", async (req, res) => {
+// GET /products: Retrieve all products that are market-listed
+app.get("/products", async (req, res) => {
   try {
-    const { id } = req.params;
-    const { market } = req.body;
-    const result = await pool.query(
-      "UPDATE products SET market = $1 WHERE id = $2 RETURNING *",
-      [market, id]
-    );
-    res.json(result.rows[0]);
+    const result = await pool.query("SELECT * FROM products WHERE market = TRUE");
+    res.json(result.rows);
   } catch (error) {
-    console.error("Error updating product:", error);
-    res.status(500).json({ error: "Failed to update product" });
+    console.error("Error fetching products:", error);
+    res.status(500).json({ error: "Failed to fetch product data" });
   }
 });
 
-// ✅ Route to Delete a Product
-app.delete("/delete-product/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.query("DELETE FROM products WHERE id = $1", [id]);
-    res.json({ message: "Product deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting product:", error);
-    res.status(500).json({ error: "Failed to delete product" });
-  }
-});
+// (Optional) Routes for updating or deleting products can be added similarly.
 
-// Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
