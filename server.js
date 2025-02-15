@@ -18,7 +18,7 @@ app.use(cors({
 }));
 
 // Google Apps Script Web App URL
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyps4Z9PwJIDEHrk75gnhBE4KcxKGem-UeljhI0Hbu6fkIsOjpUPgJKouWff4hpC22f/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySYrjVDsztSZQW0hK0jUDqsURu-cOoZfLXGVk7AwiWRAU510J0M0_uQN596cE0fMIr/exec";
 
 // GET: Fetch products from Google Sheets
 app.get("/products", async (req, res) => {
