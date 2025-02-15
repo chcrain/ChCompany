@@ -1,36 +1,41 @@
 const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
+
 const app = express();
 
-// First, set up CORS middleware with explicit options
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+// Set up CORS with explicit options
 app.use(cors({
   origin: '*',
-  methods: ['GET'],
+  methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false,
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
 
-// Your Google Script URL
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySYrjVDsztSZQW0hK0jUDqsURu-cOoZfLXGVk7AwiWRAU510J0M0_uQN596cE0fMIr/exec";
+// Google Apps Script Web App URL
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyps4Z9PwJIDEHrk75gnhBE4KcxKGem-UeljhI0Hbu6fkIsOjpUPgJKouWff4hpC22f/exec";
 
+// GET: Fetch products from Google Sheets
 app.get("/products", async (req, res) => {
   try {
-    // Explicitly set headers before making the fetch
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET');
-    
+
+    // Fetch data from Google Script
     const response = await fetch(GOOGLE_SCRIPT_URL);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
-    // Send the response with explicit headers
+
+    // Return product data with appropriate headers
     res.set({
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*'
@@ -45,6 +50,35 @@ app.get("/products", async (req, res) => {
   }
 });
 
+// POST: Add a new product to Google Sheets
+app.post("/products", async (req, res) => {
+  try {
+    // Ensure request body contains necessary fields
+    const { id, name, description, price, imageUrl } = req.body;
+    if (!id || !name || !description || !price || !imageUrl) {
+      return res.status(400).json({ error: "Missing required product fields" });
+    }
+
+    // Send the new product to Google Apps Script via POST
+    const response = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body)
+    });
+
+    const data = await response.json();
+    res.json(data);
+    
+  } catch (error) {
+    console.error("Error adding product:", error);
+    res.status(500).json({ 
+      error: "Failed to add product",
+      details: error.message 
+    });
+  }
+});
+
+// Start the Express server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
