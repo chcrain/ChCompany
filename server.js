@@ -9,10 +9,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// PostgreSQL connection using environment variable or fallback URL
+// PostgreSQL connection using environment variable
 const pool = new Pool({
-  // Replace the fallback connection string with your actual PostgreSQL URL if needed.
-  connectionString: process.env.POSTGRES_CONNECTION_URL || "postgresql://ecommerce_o3qh_user:BYrie4VojPOU2jYUzwb4666AN9RJrXpB@dpg-cuohuirqf0us739275lg-a.ohio-postgres.render.com/ecommerce_o3qh",
+  connectionString: process.env.POSTGRES_CONNECTION_URL, // Ensure this is set in Render
   ssl: { rejectUnauthorized: false },
 });
 
@@ -20,7 +19,7 @@ const pool = new Pool({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Configure the S3 client for Cloudflare R2 using your provided R2 details
+// Configure the S3 client for Cloudflare R2
 const s3 = new S3Client({
   region: "auto", // For R2, the region is "auto"
   endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -38,7 +37,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // Create a unique filename using timestamp and the original file name
+    // Create a unique filename using a timestamp
     const filename = `${Date.now()}_${file.originalname}`;
 
     // Upload the file to R2 using the PutObjectCommand
@@ -53,7 +52,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     await s3.send(command);
 
     // Construct the public URL for the uploaded file.
-    // The expected URL format: https://{bucket}.{account_id}.r2.cloudflarestorage.com/{filename}
+    // Format: https://{bucket}.{account_id}.r2.cloudflarestorage.com/{filename}
     const publicUrl = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${filename}`;
 
     res.json({ url: publicUrl });
@@ -78,10 +77,16 @@ app.post("/add-product", async (req, res) => {
   }
 });
 
-// Route to fetch all market-listed products from PostgreSQL
+// Route to fetch products
+// If the query parameter `all=true` is provided, return all products.
+// Otherwise, return only those where market = TRUE.
 app.get("/products", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM products WHERE market = TRUE");
+    const showAll = req.query.all === "true";
+    const query = showAll
+      ? "SELECT * FROM products"
+      : "SELECT * FROM products WHERE market = TRUE";
+    const result = await pool.query(query);
     res.json(result.rows);
   } catch (error) {
     console.error("Error fetching products:", error);
