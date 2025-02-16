@@ -2,31 +2,60 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// PostgreSQL connection (make sure POSTGRES_CONNECTION_URL is set in your Render environment)
+// PostgreSQL connection using environment variable or fallback URL
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_CONNECTION_URL,
+  // Replace the fallback connection string with your actual PostgreSQL URL if needed.
+  connectionString: process.env.POSTGRES_CONNECTION_URL || "postgresql://ecommerce_o3qh_user:BYrie4VojPOU2jYUzwb4666AN9RJrXpB@dpg-cuohuirqf0us739275lg-a.ohio-postgres.render.com/ecommerce_o3qh",
   ssl: { rejectUnauthorized: false },
 });
 
-// Configure Multer for file uploads (using memory storage)
+// Configure Multer to use memory storage for file uploads
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// POST /upload: Handle image upload and return a public URL from your R2 bucket
+// Configure the S3 client for Cloudflare R2 using your provided R2 details
+const s3 = new S3Client({
+  region: "auto", // For R2, the region is "auto"
+  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
+    secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
+  },
+});
+
+// Route to handle image upload to Cloudflare R2
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
-    // Construct the public URL using your R2 bucket base URL and the original file name.
-    // In a real scenario, you'd upload the file to R2 using an S3-compatible API.
-    const publicUrl = `https://pub-c2f46ab877f445158f637f7eb23d276d.r2.dev/${file.originalname}`;
+
+    // Create a unique filename using timestamp and the original file name
+    const filename = `${Date.now()}_${file.originalname}`;
+
+    // Upload the file to R2 using the PutObjectCommand
+    const params = {
+      Bucket: process.env.CLOUDFLARE_BUCKET_NAME, // e.g., "allentown"
+      Key: filename,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    };
+
+    const command = new PutObjectCommand(params);
+    await s3.send(command);
+
+    // Construct the public URL for the uploaded file.
+    // The expected URL format: https://{bucket}.{account_id}.r2.cloudflarestorage.com/{filename}
+    const publicUrl = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${filename}`;
+
     res.json({ url: publicUrl });
   } catch (error) {
     console.error("Error uploading image:", error);
@@ -34,7 +63,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-// POST /add-product: Insert a new product into PostgreSQL
+// Route to add a new product to PostgreSQL
 app.post("/add-product", async (req, res) => {
   try {
     const { name, description, price, imageUrl, market } = req.body;
@@ -49,7 +78,7 @@ app.post("/add-product", async (req, res) => {
   }
 });
 
-// GET /products: Retrieve all products that are market-listed
+// Route to fetch all market-listed products from PostgreSQL
 app.get("/products", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM products WHERE market = TRUE");
@@ -60,8 +89,7 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// (Optional) Routes for updating or deleting products can be added similarly.
-
+// Start the Express server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
