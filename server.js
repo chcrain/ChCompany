@@ -3,6 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
@@ -47,6 +48,30 @@ const s3 = new S3Client({
     secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
   },
 });
+
+// ===== Hugging Face AI Chat Integration =====
+// This route receives a prompt and sends it to the Hugging Face API.
+app.post("/api/chat", async (req, res) => {
+  const userInput = req.body.prompt;
+
+  if (!userInput) {
+    return res.status(400).json({ error: "Missing prompt input" });
+  }
+
+  try {
+    const response = await axios.post(
+      "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct",
+      { inputs: userInput },
+      { headers: { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
+    );
+
+    res.json({ reply: response.data[0].generated_text });
+  } catch (error) {
+    console.error("Hugging Face API Error:", error.response?.data || error.message);
+    res.status(500).json({ error: "AI request failed" });
+  }
+});
+// ===== End of AI Chat Integration =====
 
 // Enhanced upload route with better error handling and logging
 app.post("/upload", (req, res) => {
@@ -102,7 +127,7 @@ app.post("/upload", (req, res) => {
       
       console.log('Upload successful:', publicUrl);
 
-      // IMPORTANT: Return imageUrl instead of just url
+      // Return imageUrl instead of just url
       res.json({ imageUrl: publicUrl });
     } catch (error) {
       console.error("Error in upload process:", error);
@@ -174,6 +199,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log('Environment check:');
   console.log('- Database URL configured:', !!process.env.POSTGRES_CONNECTION_URL);
+  console.log('- Hugging Face API key configured:', !!process.env.HUGGINGFACE_API_KEY);
   console.log('- R2 credentials configured:', {
     accountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
     accessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
