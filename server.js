@@ -31,13 +31,12 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     console.log('File filter checking:', file.mimetype);
-    
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed'));
     }
     cb(null, true);
   }
-}).single('file'); // Configure single file upload middleware
+}).single('file'); // Single file upload middleware
 
 // Configure the S3 client for Cloudflare R2
 const s3 = new S3Client({
@@ -98,7 +97,8 @@ app.post("/upload", (req, res) => {
       const command = new PutObjectCommand(params);
       await s3.send(command);
 
-      const publicUrl = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${filename}`;
+      // Construct the public URL using the public domain from the environment variable
+      const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
       
       console.log('Upload successful:', publicUrl);
       
