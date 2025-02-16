@@ -62,7 +62,7 @@ app.post("/api/chat", async (req, res) => {
 
   try {
     const response = await axios.post(
-      "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1", // Correct model name
+      ""https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Correct model name
       { inputs: userInput },
       { headers: { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
     );
