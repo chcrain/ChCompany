@@ -101,8 +101,9 @@ app.post("/upload", (req, res) => {
       const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
       
       console.log('Upload successful:', publicUrl);
-      
-      res.json({ url: publicUrl });
+
+      // IMPORTANT: Return imageUrl instead of just url
+      res.json({ imageUrl: publicUrl });
     } catch (error) {
       console.error("Error in upload process:", error);
       res.status(500).json({ 
