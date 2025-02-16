@@ -53,6 +53,7 @@ const s3 = new S3Client({
 
 // ===== Hugging Face AI Chat Integration =====
 // This route receives a prompt and sends it to the Hugging Face API.
+// ===== Hugging Face AI Chat Integration =====
 app.post("/api/chat", async (req, res) => {
   const userInput = req.body.prompt;
 
@@ -62,20 +63,23 @@ app.post("/api/chat", async (req, res) => {
 
   try {
     const response = await axios.post(
-      ""https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Correct model name
+      "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Single quotes, no extra quotes
       { inputs: userInput },
-      { headers: { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
     );
 
     res.json({ reply: response.data[0].generated_text });
   } catch (error) {
-    console.error(
-      "Hugging Face API Error:",
-      error.response?.data || error.message
-    );
+    console.error("Hugging Face API Error:", error.response?.data || error.message);
     res.status(500).json({ error: "AI request failed" });
   }
 });
+
 // ===== End of AI Chat Integration =====
 
 // Enhanced upload route with better error handling and logging
