@@ -9,13 +9,11 @@ require("dotenv").config();
 const app = express();
 
 // Enhanced CORS configuration
-app.use(
-  cors({
-    origin: "*", // Allow all origins
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
+app.use(cors({
+  origin: '*', // Allow all origins
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
 
 app.use(express.json());
 
@@ -33,13 +31,13 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
-    console.log("File filter checking:", file.mimetype);
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image files are allowed"));
+    console.log('File filter checking:', file.mimetype);
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed'));
     }
     cb(null, true);
-  },
-}).single("file"); // Single file upload middleware
+  }
+}).single('file'); // Single file upload middleware
 
 // Configure the S3 client for Cloudflare R2
 const s3 = new S3Client({
@@ -53,7 +51,6 @@ const s3 = new S3Client({
 
 // ===== Hugging Face AI Chat Integration =====
 // This route receives a prompt and sends it to the Hugging Face API.
-// ===== Hugging Face AI Chat Integration =====
 app.post("/api/chat", async (req, res) => {
   const userInput = req.body.prompt;
 
@@ -63,14 +60,9 @@ app.post("/api/chat", async (req, res) => {
 
   try {
     const response = await axios.post(
-      "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Single quotes, no extra quotes
+      "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
       { inputs: userInput },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
+      { headers: { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
     );
 
     res.json({ reply: response.data[0].generated_text });
@@ -79,49 +71,45 @@ app.post("/api/chat", async (req, res) => {
     res.status(500).json({ error: "AI request failed" });
   }
 });
-
 // ===== End of AI Chat Integration =====
 
 // Enhanced upload route with better error handling and logging
 app.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
-      console.error("Multer error:", err);
-      return res.status(400).json({
-        error: "File upload error",
-        details: err.message,
+      console.error('Multer error:', err);
+      return res.status(400).json({ 
+        error: "File upload error", 
+        details: err.message 
       });
     }
 
     try {
-      console.log("Upload request received");
-      console.log("Request body:", req.body);
-
+      console.log('Upload request received');
+      console.log('Request body:', req.body);
+      
       if (!req.file) {
-        console.log("No file found in request");
+        console.log('No file found in request');
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      console.log("File details:", {
+      console.log('File details:', {
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
-        size: req.file.size,
+        size: req.file.size
       });
 
       // Create a unique filename
-      const filename = `${Date.now()}_${req.file.originalname.replace(
-        /\s+/g,
-        "_"
-      )}`;
-
-      console.log("Attempting R2 upload:", filename);
+      const filename = `${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+      
+      console.log('Attempting R2 upload:', filename);
 
       // Verify R2 credentials before upload
-      console.log("R2 configuration check:", {
+      console.log('R2 configuration check:', {
         hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
         hasAccessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
         hasSecretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-        hasBucketName: !!process.env.CLOUDFLARE_BUCKET_NAME,
+        hasBucketName: !!process.env.CLOUDFLARE_BUCKET_NAME
       });
 
       const params = {
@@ -136,18 +124,17 @@ app.post("/upload", (req, res) => {
 
       // Construct the public URL using the public domain from the environment variable
       const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
-
-      console.log("Upload successful:", publicUrl);
+      
+      console.log('Upload successful:', publicUrl);
 
       // Return imageUrl instead of just url
       res.json({ imageUrl: publicUrl });
     } catch (error) {
       console.error("Error in upload process:", error);
-      res.status(500).json({
+      res.status(500).json({ 
         error: "Failed to upload image",
         details: error.message,
-        stack:
-          process.env.NODE_ENV === "development" ? error.stack : undefined,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
     }
   });
@@ -156,14 +143,14 @@ app.post("/upload", (req, res) => {
 // Enhanced product addition route
 app.post("/add-product", async (req, res) => {
   try {
-    console.log("Received product data:", req.body);
-
+    console.log('Received product data:', req.body);
+    
     const { name, description, price, imageUrl, market } = req.body;
-
+    
     if (!name || !price || !imageUrl) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         error: "Missing required fields",
-        required: ["name", "price", "imageUrl"],
+        required: ['name', 'price', 'imageUrl']
       });
     }
 
@@ -172,13 +159,13 @@ app.post("/add-product", async (req, res) => {
       [name, description, price, imageUrl, market]
     );
 
-    console.log("Product added successfully:", result.rows[0]);
+    console.log('Product added successfully:', result.rows[0]);
     res.json(result.rows[0]);
   } catch (error) {
     console.error("Error adding product:", error);
-    res.status(500).json({
+    res.status(500).json({ 
       error: "Failed to add product",
-      details: error.message,
+      details: error.message
     });
   }
 });
@@ -186,22 +173,22 @@ app.post("/add-product", async (req, res) => {
 // Enhanced products fetch route
 app.get("/products", async (req, res) => {
   try {
-    console.log("Fetching products, show all:", req.query.all);
-
+    console.log('Fetching products, show all:', req.query.all);
+    
     const showAll = req.query.all === "true";
     const query = showAll
       ? "SELECT * FROM products"
       : "SELECT * FROM products WHERE market = TRUE";
-
+    
     const result = await pool.query(query);
     console.log(`Found ${result.rows.length} products`);
-
+    
     res.json(result.rows);
   } catch (error) {
     console.error("Error fetching products:", error);
-    res.status(500).json({
+    res.status(500).json({ 
       error: "Failed to fetch product data",
-      details: error.message,
+      details: error.message
     });
   }
 });
@@ -210,19 +197,13 @@ app.get("/products", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log("Environment check:");
-  console.log(
-    "- Database URL configured:",
-    !!process.env.POSTGRES_CONNECTION_URL
-  );
-  console.log(
-    "- Hugging Face API key configured:",
-    !!process.env.HUGGINGFACE_API_KEY
-  );
-  console.log("- R2 credentials configured:", {
+  console.log('Environment check:');
+  console.log('- Database URL configured:', !!process.env.POSTGRES_CONNECTION_URL);
+  console.log('- Hugging Face API key configured:', !!process.env.HUGGINGFACE_API_KEY);
+  console.log('- R2 credentials configured:', {
     accountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
     accessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
-    secretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-    bucketName: !!process.env.CLOUDFLARE_BUCKET_NAME,
+    secretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_K
+    bucketName: !!process.env.CLOUDFLARE_BUCKET_NAME
   });
 });
