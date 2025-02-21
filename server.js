@@ -59,7 +59,7 @@ app.post("/api/chat", async (req, res) => {
 
   try {
     const response = await axios.post(
-  "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct",
+  "https://huggingface.co/chcrain/falcon-7b-instruct-finetuned",
   {
     inputs: userInput,
   },
