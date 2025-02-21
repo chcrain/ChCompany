@@ -2,7 +2,6 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 repo_name = "chcrain/falcon-7b-instruct-finetuned"
-hf_token = "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"  # Replace with your actual Hugging Face token
 
 # Enable 4-bit quantization to reduce memory usage
 quantization_config = BitsAndBytesConfig(
@@ -12,15 +11,14 @@ quantization_config = BitsAndBytesConfig(
     bnb_4bit_quant_type="nf4"
 )
 
-# Load tokenizer with authorization
-tokenizer = AutoTokenizer.from_pretrained(repo_name, use_auth_token=hf_token)
+# Load tokenizer
+tokenizer = AutoTokenizer.from_pretrained(repo_name)
 
 # Load model with quantization and device mapping
 model = AutoModelForCausalLM.from_pretrained(
     repo_name,
     quantization_config=quantization_config,
-    device_map="auto",
-    use_auth_token=hf_token
+    device_map="auto"
 )
 
 # Move model to GPU (if available)
