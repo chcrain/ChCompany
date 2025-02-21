@@ -1,5 +1,5 @@
 /************************************************************
- * server.js - Updated with filesystem storage for uploads
+ * server.js - Combined local + R2 upload
  ************************************************************/
 
 require("dotenv").config();
@@ -7,19 +7,14 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
-const fs = require('fs');
-const path = require('path');
+
+// AWS S3 SDK for Cloudflare R2
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 
 const app = express();
-
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log("📁 Created uploads directory:", uploadsDir);
-}
 
 /**
  * --------------------------------------------------
@@ -28,16 +23,12 @@ if (!fs.existsSync(uploadsDir)) {
  */
 app.use(
   cors({
-    origin: "*", // Allow all origins (you can restrict this if needed)
+    origin: "*", // or specify your frontend domain
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
   })
 );
 app.use(express.json());
-
-// Serve static files from the uploads directory
-app.use('/uploads', express.static(uploadsDir));
-console.log("📄 Serving static files from:", uploadsDir);
 
 /**
  * --------------------------------------------------
@@ -51,12 +42,29 @@ const pool = new Pool({
 
 /**
  * --------------------------------------------------
- * 3. Multer Configuration for File Uploads
+ * 3. File Storage Directories
  * --------------------------------------------------
  */
-const storage = multer.memoryStorage();
+const uploadsDir = path.join(__dirname, "uploads");
+
+// Create uploads directory if it doesn't exist
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log("📁 Created uploads directory:", uploadsDir);
+}
+
+// Serve static files from the uploads directory
+app.use("/uploads", express.static(uploadsDir));
+console.log("📄 Serving static files from:", uploadsDir);
+
+/**
+ * --------------------------------------------------
+ * 4. Multer Configuration
+ * --------------------------------------------------
+ */
+const storage = multer.memoryStorage(); // store file buffer in memory
 const upload = multer({
-  storage: storage,
+  storage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
@@ -67,16 +75,14 @@ const upload = multer({
     }
     cb(null, true);
   },
-}).single("file"); // Single file upload middleware
+}).single("file");
 
 /**
  * --------------------------------------------------
- * 4. Cloudflare R2 Configuration (kept for future use)
+ * 5. Cloudflare R2 Configuration
  * --------------------------------------------------
  */
-// Extract just the account ID from the environment variable
-const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.replace('.r2.dev', '');
-
+const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.replace(".r2.dev", "") || "";
 console.log("🔍 Checking Cloudflare R2 credentials...");
 console.log("CLOUDFLARE_ACCOUNT_ID (cleaned):", accountId);
 console.log(
@@ -89,7 +95,6 @@ console.log(
 );
 console.log("CLOUDFLARE_BUCKET_NAME:", process.env.CLOUDFLARE_BUCKET_NAME);
 
-// Create S3 client with corrected endpoint (not actively used but kept for future reference)
 const s3 = new S3Client({
   region: "auto",
   endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
@@ -101,7 +106,7 @@ const s3 = new S3Client({
 
 /**
  * --------------------------------------------------
- * 5. Hugging Face AI Chat Endpoint
+ * 6. Hugging Face AI Chat Endpoint
  * --------------------------------------------------
  */
 app.post("/api/chat", async (req, res) => {
@@ -130,12 +135,11 @@ app.post("/api/chat", async (req, res) => {
 
 /**
  * --------------------------------------------------
- * 6. Image Upload to Local Filesystem
+ * 7. Image Upload (Local + R2)
  * --------------------------------------------------
  */
 app.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
-    // Handle Multer errors first
     if (err) {
       console.error("❌ Multer error:", err);
       return res.status(400).json({
@@ -148,7 +152,6 @@ app.post("/upload", (req, res) => {
       console.log("Upload request received");
       console.log("Request body:", req.body);
 
-      // Check if file exists
       if (!req.file) {
         console.log("❌ No file found in request");
         return res.status(400).json({ error: "No file uploaded" });
@@ -160,27 +163,49 @@ app.post("/upload", (req, res) => {
         size: req.file.size,
       });
 
-      // Generate a unique filename
-      const filename = `${Date.now()}_${req.file.originalname.replace(/\s+/g, "_")}`;
+      // 1) Generate a unique filename
+      const rawName = req.file.originalname.replace(/\s+/g, "_");
+      const timestamp = Date.now();
+      const filename = `${timestamp}_${rawName}`;
+
+      // 2) Save file locally
       const filePath = path.join(uploadsDir, filename);
-      
-      // Save file to filesystem
       fs.writeFileSync(filePath, req.file.buffer);
-      
-      // Generate URL based on application's domain
-      const serverUrl = process.env.SERVER_URL || `https://chcompany.onrender.com`;
-      const imageUrl = `${serverUrl}/uploads/${filename}`;
-      
       console.log("✅ File saved locally:", filePath);
-      console.log("✅ Image URL:", imageUrl);
-      
-      // Return the URL
-      res.json({ imageUrl });
+
+      // 3) Upload to Cloudflare R2
+      console.log("🔄 Attempting R2 upload:", filename);
+      const uploadParams = {
+        Bucket: process.env.CLOUDFLARE_BUCKET_NAME, // e.g. 'allentown'
+        Key: filename,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+      };
+
+      await s3.send(new PutObjectCommand(uploadParams));
+      console.log("✅ R2 upload success:", filename);
+
+      // 4) Construct image URLs
+      const serverUrl = process.env.SERVER_URL || `https://chcompany.onrender.com`;
+      const localUrl = `${serverUrl}/uploads/${filename}`;
+
+      // If your bucket is public via R2.dev subdomain:
+      // e.g. https://<bucket>.<accountId>.r2.dev/<filename>
+      const r2Url = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${accountId}.r2.dev/${filename}`;
+
+      // Alternatively, for the standard endpoint:
+      // const r2Url = `https://${accountId}.r2.cloudflarestorage.com/${process.env.CLOUDFLARE_BUCKET_NAME}/${filename}`;
+
+      console.log("✅ Local URL:", localUrl);
+      console.log("✅ R2 URL:", r2Url);
+
+      // Return both URLs
+      res.json({ localUrl, r2Url });
     } catch (error) {
-      console.error("❌ Error saving file:", error);
+      console.error("❌ Error during upload:", error);
       res.status(500).json({
-        error: "Failed to save image",
-        details: error.message
+        error: "Failed to upload image",
+        details: error.message,
       });
     }
   });
@@ -188,7 +213,7 @@ app.post("/upload", (req, res) => {
 
 /**
  * --------------------------------------------------
- * 7. Add Product to Database
+ * 8. Add Product to Database
  * --------------------------------------------------
  */
 app.post("/add-product", async (req, res) => {
@@ -197,7 +222,6 @@ app.post("/add-product", async (req, res) => {
 
     const { name, description, price, imageUrl, market } = req.body;
 
-    // Basic validation
     if (!name || !price || !imageUrl) {
       return res.status(400).json({
         error: "Missing required fields",
@@ -205,9 +229,10 @@ app.post("/add-product", async (req, res) => {
       });
     }
 
-    // Replace this line with the new query
     const result = await pool.query(
-      "INSERT INTO products (name, description, price, \"imageUrl\", market) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      `INSERT INTO products (name, description, price, "imageUrl", market)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
       [name, description, price, imageUrl, market]
     );
 
@@ -224,7 +249,7 @@ app.post("/add-product", async (req, res) => {
 
 /**
  * --------------------------------------------------
- * 8. Fetch Products
+ * 9. Fetch Products
  * --------------------------------------------------
  */
 app.get("/products", async (req, res) => {
@@ -250,7 +275,7 @@ app.get("/products", async (req, res) => {
 
 /**
  * --------------------------------------------------
- * 9. Start the Server
+ * 10. Start the Server
  * --------------------------------------------------
  */
 const PORT = process.env.PORT || 3000;
