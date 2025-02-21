@@ -39,15 +39,31 @@ const upload = multer({
   }
 }).single('file'); // Configure single file upload middleware
 
-// Configure the S3 client for Cloudflare R2
+// Configure the S3 client for Cloudflare R2 with hardcoded credentials
 const s3 = new S3Client({
   region: "auto",
-  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: "https://e301d0d17c676b44c8462e710c070693.r2.cloudflarestorage.com",
   credentials: {
-    accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
-    secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
+    accessKeyId: "9db97ac9ce7a3c7089f02f051b3d0d9e",
+    secretAccessKey: "f39e75ae17ed6ab400c65f308d038cc7c55a25b24ae3952f59d424470094556f",
   },
 });
+
+// Helper function to upload to R2
+async function uploadToR2(fileBuffer, fileName, contentType) {
+  const params = {
+    Bucket: "allentown",
+    Key: fileName,
+    Body: fileBuffer,
+    ContentType: contentType,
+  };
+
+  const command = new PutObjectCommand(params);
+  await s3.send(command);
+  
+  // Return the public URL
+  return `https://pub-c2f46ab877f445158f637f7eb23d276d.r2.dev/${fileName}`;
+}
 
 // Enhanced upload route with better error handling and logging
 app.post("/upload", (req, res) => {
@@ -68,32 +84,25 @@ app.post("/upload", (req, res) => {
 
       console.log('Attempting R2 upload:', filename);
 
-      // Verify R2 credentials before upload
-      console.log('R2 configuration check:', {
-        hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
-        hasAccessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
-        hasSecretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-        hasBucketName: !!process.env.CLOUDFLARE_BUCKET_NAME
-      });
-
-      const params = {
-        Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
-        Key: filename,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-      };
-
-      const command = new PutObjectCommand(params);
-      await s3.send(command);
-
-      // Construct the public URL using the public domain from the environment variable
-      const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
+      // Using the uploadToR2 helper function
+      const publicUrl = await uploadToR2(
+        req.file.buffer,
+        filename,
+        req.file.mimetype
+      );
 
       console.log('Upload successful:', publicUrl);
 
       res.json({ url: publicUrl });
     } catch (error) {
-      console.error("Error in upload process:", error);
+      console.error("Error in upload process - Full error:", error);
+      console.error("Error message:", error.message);
+      console.error("Error name:", error.name);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+      }
+      
       res.status(500).json({ 
         error: "Failed to upload image",
         details: error.message,
@@ -163,9 +172,9 @@ app.listen(PORT, () => {
   console.log('Environment check:');
   console.log('- Database URL configured:', !!process.env.POSTGRES_CONNECTION_URL);
   console.log('- R2 credentials configured:', {
-    accountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
-    accessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
-    secretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-    bucketName: !!process.env.CLOUDFLARE_BUCKET_NAME
+    accountId: true,
+    accessKey: true,
+    secretKey: true,
+    bucketName: true
   });
 });
