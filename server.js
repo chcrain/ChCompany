@@ -1,5 +1,5 @@
 /************************************************************
- * server.js - Updated Node/Express Server with fixed R2 config
+ * server.js - Updated with filesystem storage for uploads
  ************************************************************/
 
 require("dotenv").config();
@@ -9,8 +9,17 @@ const multer = require("multer");
 const { Pool } = require("pg");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const axios = require("axios");
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log("📁 Created uploads directory:", uploadsDir);
+}
 
 /**
  * --------------------------------------------------
@@ -25,6 +34,10 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Serve static files from the uploads directory
+app.use('/uploads', express.static(uploadsDir));
+console.log("📄 Serving static files from:", uploadsDir);
 
 /**
  * --------------------------------------------------
@@ -58,7 +71,7 @@ const upload = multer({
 
 /**
  * --------------------------------------------------
- * 4. Cloudflare R2 Configuration - FIXED
+ * 4. Cloudflare R2 Configuration (kept for future use)
  * --------------------------------------------------
  */
 // Extract just the account ID from the environment variable
@@ -76,7 +89,7 @@ console.log(
 );
 console.log("CLOUDFLARE_BUCKET_NAME:", process.env.CLOUDFLARE_BUCKET_NAME);
 
-// Create S3 client with corrected endpoint
+// Create S3 client with corrected endpoint (not actively used but kept for future reference)
 const s3 = new S3Client({
   region: "auto",
   endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
@@ -117,7 +130,7 @@ app.post("/api/chat", async (req, res) => {
 
 /**
  * --------------------------------------------------
- * 6. Image Upload to Cloudflare R2 - ENHANCED ERROR HANDLING
+ * 6. Image Upload to Local Filesystem
  * --------------------------------------------------
  */
 app.post("/upload", (req, res) => {
@@ -148,57 +161,26 @@ app.post("/upload", (req, res) => {
       });
 
       // Generate a unique filename
-      const filename = `${Date.now()}_${req.file.originalname.replace(
-        /\s+/g,
-        "_"
-      )}`;
-
-      console.log("🔄 Attempting R2 upload:", filename);
-
-      // More detailed R2 configuration check
-      const r2Config = {
-        hasAccountId: !!accountId,
-        cleanedAccountId: accountId,
-        hasAccessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
-        hasSecretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-        bucketName: process.env.CLOUDFLARE_BUCKET_NAME,
-        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-      };
-      console.log("R2 configuration check:", r2Config);
-
-      // Prepare S3/R2 upload parameters
-      const params = {
-        Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
-        Key: filename,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-      };
-
-      try {
-        // Send to Cloudflare R2
-        const command = new PutObjectCommand(params);
-        await s3.send(command);
-
-        // Construct the public URL using your public domain
-        const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
-        console.log("✅ Upload successful:", publicUrl);
-
-        // Return the new image URL
-        res.json({ imageUrl: publicUrl });
-      } catch (r2Error) {
-        console.error("❌ R2 upload error:", r2Error);
-        res.status(500).json({
-          error: "Failed to upload image to R2 storage",
-          details: r2Error.message,
-          code: r2Error.code,
-        });
-      }
+      const filename = `${Date.now()}_${req.file.originalname.replace(/\s+/g, "_")}`;
+      const filePath = path.join(uploadsDir, filename);
+      
+      // Save file to filesystem
+      fs.writeFileSync(filePath, req.file.buffer);
+      
+      // Generate URL based on application's domain
+      const serverUrl = process.env.SERVER_URL || `https://chcompany.onrender.com`;
+      const imageUrl = `${serverUrl}/uploads/${filename}`;
+      
+      console.log("✅ File saved locally:", filePath);
+      console.log("✅ Image URL:", imageUrl);
+      
+      // Return the URL
+      res.json({ imageUrl });
     } catch (error) {
-      console.error("❌ Error in upload process:", error);
+      console.error("❌ Error saving file:", error);
       res.status(500).json({
-        error: "Failed to upload image",
-        details: error.message,
-        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        error: "Failed to save image",
+        details: error.message
       });
     }
   });
@@ -282,11 +264,6 @@ app.listen(PORT, () => {
     "- Hugging Face API key configured:",
     !!process.env.HUGGINGFACE_API_KEY
   );
-  console.log("- R2 credentials configured:", {
-    accountId: accountId,
-    accessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
-    secretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-    bucketName: process.env.CLOUDFLARE_BUCKET_NAME,
-    publicDomain: process.env.CLOUDFLARE_PUBLIC_DOMAIN,
-  });
+  console.log("- Server URL:", process.env.SERVER_URL || `https://chcompany.onrender.com`);
+  console.log("- File uploads directory:", uploadsDir);
 });
