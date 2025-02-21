@@ -10,11 +10,9 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const https = require('https');
 
 // AWS S3 SDK for Cloudflare R2
 const { S3Client, PutObjectCommand, ListBucketsCommand } = require("@aws-sdk/client-s3");
-const { NodeHttpHandler } = require("@aws-sdk/node-http-handler");
 
 const app = express();
 
@@ -97,6 +95,7 @@ console.log(
 );
 console.log("CLOUDFLARE_BUCKET_NAME:", process.env.CLOUDFLARE_BUCKET_NAME);
 
+// Simplified S3 client config without external dependencies
 const s3 = new S3Client({
   region: "auto",
   endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
@@ -104,14 +103,7 @@ const s3 = new S3Client({
     accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
     secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
   },
-  forcePathStyle: true, // Added for compatibility
-  // Add customized HTTPS agent with TLS configuration
-  requestHandler: new NodeHttpHandler({
-    httpsAgent: new https.Agent({
-      secureProtocol: 'TLSv1_2_method', // Force TLSv1.2
-      rejectUnauthorized: true 
-    })
-  })
+  forcePathStyle: true
 });
 
 /**
@@ -207,6 +199,12 @@ app.post("/upload", (req, res) => {
         console.log("✅ R2 URL:", r2Url);
       } catch (r2Error) {
         console.error("⚠️ R2 upload failed, falling back to local storage:", r2Error.message);
+        console.error("R2 Error details:", {
+          name: r2Error.name,
+          code: r2Error.code,
+          message: r2Error.message,
+          stack: r2Error.stack
+        });
         // Continue with only the local URL
       }
 
@@ -306,6 +304,13 @@ app.get("/test-r2-connection", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ R2 connection test failed:", error);
+    console.error("Full error details:", {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
+    
     res.status(500).json({
       success: false,
       error: error.message,
