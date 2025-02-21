@@ -10,9 +10,11 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const https = require('https');
 
 // AWS S3 SDK for Cloudflare R2
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, ListBucketsCommand } = require("@aws-sdk/client-s3");
+const { NodeHttpHandler } = require("@aws-sdk/node-http-handler");
 
 const app = express();
 
@@ -102,6 +104,14 @@ const s3 = new S3Client({
     accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
     secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
   },
+  forcePathStyle: true, // Added for compatibility
+  // Add customized HTTPS agent with TLS configuration
+  requestHandler: new NodeHttpHandler({
+    httpsAgent: new https.Agent({
+      secureProtocol: 'TLSv1_2_method', // Force TLSv1.2
+      rejectUnauthorized: true 
+    })
+  })
 });
 
 /**
@@ -173,33 +183,34 @@ app.post("/upload", (req, res) => {
       fs.writeFileSync(filePath, req.file.buffer);
       console.log("✅ File saved locally:", filePath);
 
-      // 3) Upload to Cloudflare R2
-      console.log("🔄 Attempting R2 upload:", filename);
-      const uploadParams = {
-        Bucket: process.env.CLOUDFLARE_BUCKET_NAME, // e.g. 'allentown'
-        Key: filename,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-      };
-
-      await s3.send(new PutObjectCommand(uploadParams));
-      console.log("✅ R2 upload success:", filename);
-
-      // 4) Construct image URLs
+      // 3) Construct local URL
       const serverUrl = process.env.SERVER_URL || `https://chcompany.onrender.com`;
       const localUrl = `${serverUrl}/uploads/${filename}`;
+      
+      let r2Url = null;
 
-      // If your bucket is public via R2.dev subdomain:
-      // e.g. https://<bucket>.<accountId>.r2.dev/<filename>
-      const r2Url = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${accountId}.r2.dev/${filename}`;
+      // 4) Try to upload to Cloudflare R2 (with fallback)
+      try {
+        console.log("🔄 Attempting R2 upload:", filename);
+        const uploadParams = {
+          Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+          Key: filename,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype,
+        };
 
-      // Alternatively, for the standard endpoint:
-      // const r2Url = `https://${accountId}.r2.cloudflarestorage.com/${process.env.CLOUDFLARE_BUCKET_NAME}/${filename}`;
+        await s3.send(new PutObjectCommand(uploadParams));
+        console.log("✅ R2 upload success:", filename);
 
-      console.log("✅ Local URL:", localUrl);
-      console.log("✅ R2 URL:", r2Url);
+        // If R2 upload succeeded, set the R2 URL
+        r2Url = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${accountId}.r2.dev/${filename}`;
+        console.log("✅ R2 URL:", r2Url);
+      } catch (r2Error) {
+        console.error("⚠️ R2 upload failed, falling back to local storage:", r2Error.message);
+        // Continue with only the local URL
+      }
 
-      // Return both URLs
+      // Return both URLs or just local URL if R2 failed
       res.json({ localUrl, r2Url });
     } catch (error) {
       console.error("❌ Error during upload:", error);
@@ -275,7 +286,38 @@ app.get("/products", async (req, res) => {
 
 /**
  * --------------------------------------------------
- * 10. Start the Server
+ * 10. Test R2 Connection
+ * --------------------------------------------------
+ */
+app.get("/test-r2-connection", async (req, res) => {
+  try {
+    console.log("Testing R2 connection...");
+    console.log("Endpoint:", `https://${accountId}.r2.cloudflarestorage.com`);
+    
+    // Try listing buckets
+    const listResult = await s3.send(new ListBucketsCommand({}));
+    console.log("✅ R2 connection successful!");
+    console.log("Available buckets:", listResult.Buckets.map(b => b.Name));
+    
+    res.json({
+      success: true,
+      buckets: listResult.Buckets.map(b => b.Name),
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`
+    });
+  } catch (error) {
+    console.error("❌ R2 connection test failed:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`
+    });
+  }
+});
+
+/**
+ * --------------------------------------------------
+ * 11. Start the Server
  * --------------------------------------------------
  */
 const PORT = process.env.PORT || 3000;
