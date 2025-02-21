@@ -205,8 +205,9 @@ app.post("/add-product", async (req, res) => {
       });
     }
 
+    // Replace this line with the new query
     const result = await pool.query(
-      "INSERT INTO products (name, description, price, imageUrl, market) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      "INSERT INTO products (name, description, price, \"imageUrl\", market) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [name, description, price, imageUrl, market]
     );
 
