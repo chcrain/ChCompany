@@ -159,3 +159,34 @@ app.listen(PORT, () => {
   console.log('- Database URL configured:', !!process.env.POSTGRES_CONNECTION_URL);
   console.log('- Using Cloudflare Worker for R2 uploads: https://r2-image-proxy.chcrain94.workers.dev');
 });
+
+// AI Chat Endpoint
+app.post("/api/chat", async (req, res) => {
+  const userInput = req.body.prompt;
+  console.log("AI prompt received:", userInput);
+
+  try {
+    const response = await axios.post(
+      "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct",
+      { inputs: userInput },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // Falcon-7B-Instruct returns an array with a generated_text property
+    res.json({ reply: response.data[0].generated_text });
+  } catch (error) {
+    console.error(
+      "Hugging Face API Error:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({
+      error: "AI request failed",
+      details: error.response?.data || error.message,
+    });
+  }
+});
