@@ -83,6 +83,11 @@ const upload = multer({
  * --------------------------------------------------
  */
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.replace(".r2.dev", "") || "";
+
+// Define the exact R2 public URL
+// This should be the URL shown in your R2 dashboard (https://pub-c2f46a8977f445158f6397f7eb23d276d.r2.dev)
+const r2PublicUrl = process.env.R2_PUBLIC_URL || "https://pub-c2f46a8977f445158f6397f7eb23d276d.r2.dev";
+
 console.log("🔍 Checking Cloudflare R2 credentials...");
 console.log("CLOUDFLARE_ACCOUNT_ID (cleaned):", accountId);
 console.log(
@@ -94,16 +99,16 @@ console.log(
   process.env.CLOUDFLARE_SECRET_ACCESS_KEY ? "✅ Exists" : "❌ Missing"
 );
 console.log("CLOUDFLARE_BUCKET_NAME:", process.env.CLOUDFLARE_BUCKET_NAME);
+console.log("R2_PUBLIC_URL:", r2PublicUrl);
 
-// Simplified S3 client config without external dependencies
+// Create S3 client with simpler configuration
 const s3 = new S3Client({
   region: "auto",
   endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
     secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-  },
-  forcePathStyle: true
+  }
 });
 
 /**
@@ -194,8 +199,8 @@ app.post("/upload", (req, res) => {
         await s3.send(new PutObjectCommand(uploadParams));
         console.log("✅ R2 upload success:", filename);
 
-        // If R2 upload succeeded, set the R2 URL
-        r2Url = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${accountId}.r2.dev/${filename}`;
+        // Use the exact public URL from your Cloudflare dashboard
+        r2Url = `${r2PublicUrl}/${filename}`;
         console.log("✅ R2 URL:", r2Url);
       } catch (r2Error) {
         console.error("⚠️ R2 upload failed, falling back to local storage:", r2Error.message);
@@ -291,6 +296,7 @@ app.get("/test-r2-connection", async (req, res) => {
   try {
     console.log("Testing R2 connection...");
     console.log("Endpoint:", `https://${accountId}.r2.cloudflarestorage.com`);
+    console.log("Public URL:", r2PublicUrl);
     
     // Try listing buckets
     const listResult = await s3.send(new ListBucketsCommand({}));
@@ -300,7 +306,8 @@ app.get("/test-r2-connection", async (req, res) => {
     res.json({
       success: true,
       buckets: listResult.Buckets.map(b => b.Name),
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      publicUrl: r2PublicUrl
     });
   } catch (error) {
     console.error("❌ R2 connection test failed:", error);
@@ -315,7 +322,8 @@ app.get("/test-r2-connection", async (req, res) => {
       success: false,
       error: error.message,
       code: error.code,
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      publicUrl: r2PublicUrl
     });
   }
 });
@@ -339,4 +347,5 @@ app.listen(PORT, () => {
   );
   console.log("- Server URL:", process.env.SERVER_URL || `https://chcompany.onrender.com`);
   console.log("- File uploads directory:", uploadsDir);
+  console.log("- R2 Public URL:", r2PublicUrl);
 });
