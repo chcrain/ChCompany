@@ -1,5 +1,5 @@
 /************************************************************
- * server.js - Fully Updated Node/Express Server
+ * server.js - Updated Node/Express Server with fixed R2 config
  ************************************************************/
 
 require("dotenv").config();
@@ -58,11 +58,14 @@ const upload = multer({
 
 /**
  * --------------------------------------------------
- * 4. Cloudflare R2 Configuration
+ * 4. Cloudflare R2 Configuration - FIXED
  * --------------------------------------------------
  */
+// Extract just the account ID from the environment variable
+const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.replace('.r2.dev', '');
+
 console.log("🔍 Checking Cloudflare R2 credentials...");
-console.log("CLOUDFLARE_ACCOUNT_ID:", process.env.CLOUDFLARE_ACCOUNT_ID);
+console.log("CLOUDFLARE_ACCOUNT_ID (cleaned):", accountId);
 console.log(
   "CLOUDFLARE_ACCESS_KEY_ID:",
   process.env.CLOUDFLARE_ACCESS_KEY_ID ? "✅ Exists" : "❌ Missing"
@@ -73,9 +76,10 @@ console.log(
 );
 console.log("CLOUDFLARE_BUCKET_NAME:", process.env.CLOUDFLARE_BUCKET_NAME);
 
+// Create S3 client with corrected endpoint
 const s3 = new S3Client({
   region: "auto",
-  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
     secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
@@ -113,7 +117,7 @@ app.post("/api/chat", async (req, res) => {
 
 /**
  * --------------------------------------------------
- * 6. Image Upload to Cloudflare R2
+ * 6. Image Upload to Cloudflare R2 - ENHANCED ERROR HANDLING
  * --------------------------------------------------
  */
 app.post("/upload", (req, res) => {
@@ -151,13 +155,16 @@ app.post("/upload", (req, res) => {
 
       console.log("🔄 Attempting R2 upload:", filename);
 
-      // Confirm R2 environment variables exist
-      console.log("R2 configuration check:", {
-        hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
+      // More detailed R2 configuration check
+      const r2Config = {
+        hasAccountId: !!accountId,
+        cleanedAccountId: accountId,
         hasAccessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
         hasSecretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-        hasBucketName: !!process.env.CLOUDFLARE_BUCKET_NAME,
-      });
+        bucketName: process.env.CLOUDFLARE_BUCKET_NAME,
+        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      };
+      console.log("R2 configuration check:", r2Config);
 
       // Prepare S3/R2 upload parameters
       const params = {
@@ -167,17 +174,25 @@ app.post("/upload", (req, res) => {
         ContentType: req.file.mimetype,
       };
 
-      // Send to Cloudflare R2
-      const command = new PutObjectCommand(params);
-      await s3.send(command);
+      try {
+        // Send to Cloudflare R2
+        const command = new PutObjectCommand(params);
+        await s3.send(command);
 
-      // Construct the public URL (example: "https://pub-c2f46ab877f445158f637f7eb23d276d.r2.dev/file.png")
-      // or use your custom domain if set up
-      const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
-      console.log("✅ Upload successful:", publicUrl);
+        // Construct the public URL using your public domain
+        const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
+        console.log("✅ Upload successful:", publicUrl);
 
-      // Return the new image URL
-      res.json({ imageUrl: publicUrl });
+        // Return the new image URL
+        res.json({ imageUrl: publicUrl });
+      } catch (r2Error) {
+        console.error("❌ R2 upload error:", r2Error);
+        res.status(500).json({
+          error: "Failed to upload image to R2 storage",
+          details: r2Error.message,
+          code: r2Error.code,
+        });
+      }
     } catch (error) {
       console.error("❌ Error in upload process:", error);
       res.status(500).json({
@@ -268,9 +283,10 @@ app.listen(PORT, () => {
     !!process.env.HUGGINGFACE_API_KEY
   );
   console.log("- R2 credentials configured:", {
-    accountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
+    accountId: accountId,
     accessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
     secretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-    bucketName: !!process.env.CLOUDFLARE_BUCKET_NAME,
+    bucketName: process.env.CLOUDFLARE_BUCKET_NAME,
+    publicDomain: process.env.CLOUDFLARE_PUBLIC_DOMAIN,
   });
 });
