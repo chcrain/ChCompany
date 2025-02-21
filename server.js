@@ -1,28 +1,22 @@
-
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 require("dotenv").config();
-
 const app = express();
-
 // Enhanced CORS configuration
 app.use(cors({
   origin: '*', // Allow all origins
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type']
 }));
-
 app.use(express.json());
-
 // PostgreSQL connection using environment variable
 const pool = new Pool({
   connectionString: process.env.POSTGRES_CONNECTION_URL,
   ssl: { rejectUnauthorized: false },
 });
-
 // Configure Multer with enhanced error handling and logging
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -39,7 +33,6 @@ const upload = multer({
     cb(null, true);
   }
 }).single('file'); // Configure single file upload middleware
-}).single('file'); // Single file upload middleware
 
 // Configure the S3 client for Cloudflare R2
 const s3 = new S3Client({
@@ -50,7 +43,6 @@ const s3 = new S3Client({
     secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
   },
 });
-
 // Enhanced upload route with better error handling and logging
 app.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
@@ -61,15 +53,11 @@ app.post("/upload", (req, res) => {
         details: err.message 
       });
     }
-
     try {
       console.log('Upload request received');
-
       // Create a unique filename
       const filename = `${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
-
       console.log('Attempting R2 upload:', filename);
-
       // Verify R2 credentials before upload
       console.log('R2 configuration check:', {
         hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
@@ -77,25 +65,42 @@ app.post("/upload", (req, res) => {
         hasSecretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
         hasBucketName: !!process.env.CLOUDFLARE_BUCKET_NAME
       });
-
       const params = {
         Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
         Key: filename,
         Body: req.file.buffer,
         ContentType: req.file.mimetype,
       };
-
       const command = new PutObjectCommand(params);
       await s3.send(command);
-
-      const publicUrl = `https://${process.env.CLOUDFLARE_BUCKET_NAME}.${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${filename}`;
+      
       // Construct the public URL using the public domain from the environment variable
       const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
-
       console.log('Upload successful:', publicUrl);
-
-    secretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
-    bucketName: !!process.env.CLOUDFLARE_BUCKET_NAME
+      
+      // Store file info in the database
+      const result = await pool.query(
+        "INSERT INTO uploads (filename, url, uploaded_at) VALUES ($1, $2, NOW()) RETURNING *",
+        [filename, publicUrl]
+      );
+      
+      return res.status(200).json({
+        success: true,
+        url: publicUrl,
+        file: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Server error during upload:', error);
+      return res.status(500).json({
+        error: "Server error during upload",
+        details: error.message
+      });
+    }
   });
 });
+
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
