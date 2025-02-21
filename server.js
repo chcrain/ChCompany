@@ -57,8 +57,6 @@ const s3 = new S3Client({
 app.post("/api/chat", async (req, res) => {
   const userInput = req.body.prompt;
 
-@@ -62,163 +63,166 @@
-
   try {
     const response = await axios.post(
       ""https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Correct model name
