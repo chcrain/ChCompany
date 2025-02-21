@@ -59,17 +59,18 @@ app.post("/api/chat", async (req, res) => {
 
   try {
     const response = await axios.post(
-      ""https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Correct model name
-      "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", // Single quotes, no extra quotes
-      { inputs: userInput },
-      { headers: { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+  "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct",
+  {
+    inputs: userInput,
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+  }
+);
+
 
     res.json({ reply: response.data[0].generated_text });
   } catch (error) {
