@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const axios = require("axios"); // Add axios to your dependencies
 require("dotenv").config();
 
 const app = express();
@@ -39,33 +39,7 @@ const upload = multer({
   }
 }).single('file'); // Configure single file upload middleware
 
-// Configure the S3 client for Cloudflare R2 with hardcoded credentials
-const s3 = new S3Client({
-  region: "auto",
-  endpoint: "https://e301d0d17c676b44c8462e710c070693.r2.cloudflarestorage.com",
-  credentials: {
-    accessKeyId: "9db97ac9ce7a3c7089f02f051b3d0d9e",
-    secretAccessKey: "f39e75ae17ed6ab400c65f308d038cc7c55a25b24ae3952f59d424470094556f",
-  },
-});
-
-// Helper function to upload to R2
-async function uploadToR2(fileBuffer, fileName, contentType) {
-  const params = {
-    Bucket: "allentown",
-    Key: fileName,
-    Body: fileBuffer,
-    ContentType: contentType,
-  };
-
-  const command = new PutObjectCommand(params);
-  await s3.send(command);
-  
-  // Return the public URL
-  return `https://pub-c2f46ab877f445158f637f7eb23d276d.r2.dev/${fileName}`;
-}
-
-// Enhanced upload route with better error handling and logging
+// Worker upload route
 app.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
@@ -81,32 +55,43 @@ app.post("/upload", (req, res) => {
 
       // Create a unique filename
       const filename = `${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+      console.log('Preparing upload:', filename);
 
-      console.log('Attempting R2 upload:', filename);
-
-      // Using the uploadToR2 helper function
-      const publicUrl = await uploadToR2(
-        req.file.buffer,
-        filename,
-        req.file.mimetype
-      );
-
-      console.log('Upload successful:', publicUrl);
-
-      res.json({ url: publicUrl });
-    } catch (error) {
-      console.error("Error in upload process - Full error:", error);
-      console.error("Error message:", error.message);
-      console.error("Error name:", error.name);
-      if (error.response) {
-        console.error("Response data:", error.response.data);
-        console.error("Response status:", error.response.status);
-      }
+      // The Worker URL
+      const workerUrl = "https://r2-image-proxy.chcrain94.workers.dev";
       
+      try {
+        // Send the file to your worker
+        console.log('Sending file to worker:', workerUrl);
+        const response = await axios.post(`${workerUrl}/upload`, 
+          req.file.buffer,
+          {
+            headers: {
+              'Content-Type': req.file.mimetype,
+              'X-Filename': filename
+            }
+          }
+        );
+        
+        console.log('Worker upload response:', response.status);
+        
+        // Get the URL from the worker response
+        const fileUrl = response.data.url;
+        console.log('Upload successful:', fileUrl);
+        
+        res.json({ url: fileUrl });
+      } catch (uploadError) {
+        console.error('Error during worker upload:', uploadError.message);
+        if (uploadError.response) {
+          console.error('Worker response:', uploadError.response.status, uploadError.response.data);
+        }
+        throw uploadError;
+      }
+    } catch (error) {
+      console.error("Error in upload process:", error.message);
       res.status(500).json({ 
         error: "Failed to upload image",
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        details: error.message
       });
     }
   });
@@ -171,10 +156,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log('Environment check:');
   console.log('- Database URL configured:', !!process.env.POSTGRES_CONNECTION_URL);
-  console.log('- R2 credentials configured:', {
-    accountId: true,
-    accessKey: true,
-    secretKey: true,
-    bucketName: true
-  });
+  console.log('- Using Cloudflare Worker for R2 uploads: https://r2-image-proxy.chcrain94.workers.dev');
 });
