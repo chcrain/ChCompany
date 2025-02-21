@@ -102,19 +102,19 @@ app.post("/add-product", async (req, res) => {
   try {
     console.log('Received product data:', req.body);
 
-    const { name, description, price, imageUrl, market } = req.body;
+    const { name, description, price, imageurl, market } = req.body;
 
     if (!name || !price || !imageUrl) {
       return res.status(400).json({ 
         error: "Missing required fields",
-        required: ['name', 'price', 'imageUrl']
+        required: ['name', 'price', 'imageurl']
       });
     }
 
     // Change the column name to match your database schema
     const result = await pool.query(
       "INSERT INTO products (name, description, price, imageurl, market) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [name, description, price, imageUrl, market]
+      [name, description, price, imageurl, market]
     );
 
     console.log('Product added successfully:', result.rows[0]);
