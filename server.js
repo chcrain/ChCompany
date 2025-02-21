@@ -1,31 +1,46 @@
+/************************************************************
+ * server.js - Fully Updated Node/Express Server
+ ************************************************************/
+
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const axios = require("axios");
-require("dotenv").config();
 
 const app = express();
 
-// Enhanced CORS configuration
+/**
+ * --------------------------------------------------
+ * 1. CORS Configuration
+ * --------------------------------------------------
+ */
 app.use(
   cors({
-    origin: "*", // Allow all origins
+    origin: "*", // Allow all origins (you can restrict this if needed)
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
   })
 );
-
 app.use(express.json());
 
-// PostgreSQL connection using environment variable
+/**
+ * --------------------------------------------------
+ * 2. PostgreSQL Database Connection
+ * --------------------------------------------------
+ */
 const pool = new Pool({
   connectionString: process.env.POSTGRES_CONNECTION_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// Configure Multer with enhanced error handling and logging
+/**
+ * --------------------------------------------------
+ * 3. Multer Configuration for File Uploads
+ * --------------------------------------------------
+ */
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
@@ -41,7 +56,23 @@ const upload = multer({
   },
 }).single("file"); // Single file upload middleware
 
-// Configure the S3 client for Cloudflare R2
+/**
+ * --------------------------------------------------
+ * 4. Cloudflare R2 Configuration
+ * --------------------------------------------------
+ */
+console.log("🔍 Checking Cloudflare R2 credentials...");
+console.log("CLOUDFLARE_ACCOUNT_ID:", process.env.CLOUDFLARE_ACCOUNT_ID);
+console.log(
+  "CLOUDFLARE_ACCESS_KEY_ID:",
+  process.env.CLOUDFLARE_ACCESS_KEY_ID ? "✅ Exists" : "❌ Missing"
+);
+console.log(
+  "CLOUDFLARE_SECRET_ACCESS_KEY:",
+  process.env.CLOUDFLARE_SECRET_ACCESS_KEY ? "✅ Exists" : "❌ Missing"
+);
+console.log("CLOUDFLARE_BUCKET_NAME:", process.env.CLOUDFLARE_BUCKET_NAME);
+
 const s3 = new S3Client({
   region: "auto",
   endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -51,45 +82,45 @@ const s3 = new S3Client({
   },
 });
 
-// ===== Hugging Face AI Chat Integration =====
-// This route receives a prompt and sends it to the Hugging Face API.
-// ===== Hugging Face AI Chat Integration =====
+/**
+ * --------------------------------------------------
+ * 5. Hugging Face AI Chat Endpoint
+ * --------------------------------------------------
+ */
 app.post("/api/chat", async (req, res) => {
   const userInput = req.body.prompt;
+  console.log("AI prompt received:", userInput);
 
   try {
     const response = await axios.post(
-  "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct",
-  {
-    inputs: userInput,
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-  }
-);
+      "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct",
+      { inputs: userInput },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-
+    // Falcon-7B-Instruct returns an array with 'generated_text'
     res.json({ reply: response.data[0].generated_text });
   } catch (error) {
-    console.error(
-      "Hugging Face API Error:",
-      error.response?.data || error.message
-    );
     console.error("Hugging Face API Error:", error.response?.data || error.message);
     res.status(500).json({ error: "AI request failed" });
   }
 });
 
-// ===== End of AI Chat Integration =====
-
-// Enhanced upload route with better error handling and logging
+/**
+ * --------------------------------------------------
+ * 6. Image Upload to Cloudflare R2
+ * --------------------------------------------------
+ */
 app.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
+    // Handle Multer errors first
     if (err) {
-      console.error("Multer error:", err);
+      console.error("❌ Multer error:", err);
       return res.status(400).json({
         error: "File upload error",
         details: err.message,
@@ -100,26 +131,27 @@ app.post("/upload", (req, res) => {
       console.log("Upload request received");
       console.log("Request body:", req.body);
 
+      // Check if file exists
       if (!req.file) {
-        console.log("No file found in request");
+        console.log("❌ No file found in request");
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      console.log("File details:", {
+      console.log("✅ File details:", {
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
       });
 
-      // Create a unique filename
+      // Generate a unique filename
       const filename = `${Date.now()}_${req.file.originalname.replace(
         /\s+/g,
         "_"
       )}`;
 
-      console.log("Attempting R2 upload:", filename);
+      console.log("🔄 Attempting R2 upload:", filename);
 
-      // Verify R2 credentials before upload
+      // Confirm R2 environment variables exist
       console.log("R2 configuration check:", {
         hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
         hasAccessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
@@ -127,6 +159,7 @@ app.post("/upload", (req, res) => {
         hasBucketName: !!process.env.CLOUDFLARE_BUCKET_NAME,
       });
 
+      // Prepare S3/R2 upload parameters
       const params = {
         Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
         Key: filename,
@@ -134,35 +167,40 @@ app.post("/upload", (req, res) => {
         ContentType: req.file.mimetype,
       };
 
+      // Send to Cloudflare R2
       const command = new PutObjectCommand(params);
       await s3.send(command);
 
-      // Construct the public URL using the public domain from the environment variable
+      // Construct the public URL (example: "https://pub-c2f46ab877f445158f637f7eb23d276d.r2.dev/file.png")
+      // or use your custom domain if set up
       const publicUrl = `https://${process.env.CLOUDFLARE_PUBLIC_DOMAIN}/${filename}`;
+      console.log("✅ Upload successful:", publicUrl);
 
-      console.log("Upload successful:", publicUrl);
-
-      // Return imageUrl instead of just url
+      // Return the new image URL
       res.json({ imageUrl: publicUrl });
     } catch (error) {
-      console.error("Error in upload process:", error);
+      console.error("❌ Error in upload process:", error);
       res.status(500).json({
         error: "Failed to upload image",
         details: error.message,
-        stack:
-          process.env.NODE_ENV === "development" ? error.stack : undefined,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
   });
 });
 
-// Enhanced product addition route
+/**
+ * --------------------------------------------------
+ * 7. Add Product to Database
+ * --------------------------------------------------
+ */
 app.post("/add-product", async (req, res) => {
   try {
     console.log("Received product data:", req.body);
 
     const { name, description, price, imageUrl, market } = req.body;
 
+    // Basic validation
     if (!name || !price || !imageUrl) {
       return res.status(400).json({
         error: "Missing required fields",
@@ -175,10 +213,10 @@ app.post("/add-product", async (req, res) => {
       [name, description, price, imageUrl, market]
     );
 
-    console.log("Product added successfully:", result.rows[0]);
+    console.log("✅ Product added successfully:", result.rows[0]);
     res.json(result.rows[0]);
   } catch (error) {
-    console.error("Error adding product:", error);
+    console.error("❌ Error adding product:", error);
     res.status(500).json({
       error: "Failed to add product",
       details: error.message,
@@ -186,11 +224,14 @@ app.post("/add-product", async (req, res) => {
   }
 });
 
-// Enhanced products fetch route
+/**
+ * --------------------------------------------------
+ * 8. Fetch Products
+ * --------------------------------------------------
+ */
 app.get("/products", async (req, res) => {
   try {
     console.log("Fetching products, show all:", req.query.all);
-
     const showAll = req.query.all === "true";
     const query = showAll
       ? "SELECT * FROM products"
@@ -201,7 +242,7 @@ app.get("/products", async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching products:", error);
+    console.error("❌ Error fetching products:", error);
     res.status(500).json({
       error: "Failed to fetch product data",
       details: error.message,
@@ -209,7 +250,11 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// Start the server with environment check
+/**
+ * --------------------------------------------------
+ * 9. Start the Server
+ * --------------------------------------------------
+ */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
